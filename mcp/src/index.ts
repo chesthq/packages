@@ -34,8 +34,15 @@ import { signReferral } from "./referrer.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-/** Your Solana wallet address — earns commissions on every API call via X-Referrer-Wallet */
+/** Hot wallet that signs referral claims (proves ownership). Also used as payout if REFERRER_PAYOUT_WALLET unset. */
 const REFERRER_WALLET = process.env.REFERRER_WALLET || "";
+
+/**
+ * Optional cold wallet to receive commission payouts.
+ * The hot key (REFERRER_WALLET) still signs, but funds go here.
+ * Set this to separate signing risk from funds.
+ */
+const REFERRER_PAYOUT_WALLET = process.env.REFERRER_PAYOUT_WALLET || "";
 
 /** Secret key for paying x402 API calls — JSON array [1,2,3,...] or base64 string */
 const AGENT_PRIVATE_KEY_RAW = process.env.AGENT_WALLET_PRIVATE_KEY || "";
@@ -165,7 +172,13 @@ async function callGatedApi(baseUrl: string, path: string, slug: string): Promis
 
   // Sign the referral claim if we have a wallet + key
   if (REFERRER_WALLET && agentSecretKey) {
-    const referralHeaders = await signReferral(agentSecretKey, REFERRER_WALLET, slug, amountMicros);
+    const referralHeaders = await signReferral(
+      agentSecretKey,
+      REFERRER_WALLET,
+      slug,
+      amountMicros,
+      REFERRER_PAYOUT_WALLET || undefined
+    );
     Object.assign(paymentHeaders, referralHeaders);
   }
 
