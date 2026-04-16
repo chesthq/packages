@@ -30,6 +30,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { signReferral } from "./referrer.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -85,29 +86,29 @@ const KNOWN_APIS: ApiInfo[] = [
 // ─── x402 Payment Client ──────────────────────────────────────────────────────
 
 let paymentClient: any = null;
+let agentSecretKey: Uint8Array | null = null;
+
+function parseSecretKey(raw: string): Uint8Array {
+  if (raw.startsWith("[")) return new Uint8Array(JSON.parse(raw));
+  return new Uint8Array(Buffer.from(raw, "base64"));
+}
 
 async function getPaymentClient() {
   if (paymentClient) return paymentClient;
   if (!AGENT_PRIVATE_KEY_RAW) return null;
 
+  agentSecretKey = parseSecretKey(AGENT_PRIVATE_KEY_RAW);
+
   // Lazy-load heavy Solana deps
   const { createKeyPairSignerFromBytes } = await import("@solana/kit");
-  const { toClientSvmSigner } = await import("@x402/svm/exact/client");
-  const { x402Client } = await import("@x402/core/client");
   const { registerExactSvmScheme } = await import("@x402/svm/exact/client");
+  const { x402Client } = await import("@x402/core/client");
 
-  let secretKey: Uint8Array;
-  if (AGENT_PRIVATE_KEY_RAW.startsWith("[")) {
-    secretKey = new Uint8Array(JSON.parse(AGENT_PRIVATE_KEY_RAW));
-  } else {
-    secretKey = new Uint8Array(Buffer.from(AGENT_PRIVATE_KEY_RAW, "base64"));
-  }
-
-  const keypairSigner = await createKeyPairSignerFromBytes(secretKey);
-  const svmSigner = toClientSvmSigner(keypairSigner);
+  // @x402/svm client signer is just the keypair signer directly (ClientSvmSigner = TransactionSigner)
+  const keypairSigner = await createKeyPairSignerFromBytes(agentSecretKey);
 
   const client = new x402Client();
-  registerExactSvmScheme(client, { signer: svmSigner });
+  registerExactSvmScheme(client, { signer: keypairSigner });
 
   paymentClient = client;
   return client;
@@ -115,19 +116,20 @@ async function getPaymentClient() {
 
 /**
  * Make a paid request to an x402-gated endpoint.
- * Automatically injects X-Referrer-Wallet so the MCP server earns commissions.
+ * Automatically signs and injects X-Referrer-Wallet + X-Referrer-Sig so the
+ * MCP operator earns commissions verified on-chain.
+ *
+ * @param baseUrl - Gate URL (e.g. http://localhost:4010)
+ * @param path    - API path (e.g. /sentiment/SOL)
+ * @param slug    - API name matching the split config (for referral signature)
  */
-async function callGatedApi(baseUrl: string, path: string): Promise<any> {
+async function callGatedApi(baseUrl: string, path: string, slug: string): Promise<any> {
   const url = `${baseUrl}${path}`;
   const headers: Record<string, string> = {
     "Accept": "application/json",
   };
 
-  if (REFERRER_WALLET) {
-    headers["X-Referrer-Wallet"] = REFERRER_WALLET;
-  }
-
-  // First try — might be free (freebie) or session-cached
+  // First try — might be a freebie or session-cached (no payment or sig needed)
   const firstResponse = await fetch(url, { headers });
 
   if (firstResponse.status !== 402) {
@@ -147,15 +149,27 @@ async function callGatedApi(baseUrl: string, path: string): Promise<any> {
   }
 
   // Parse the 402 response to get payment requirements
-  const paymentRequired = await firstResponse.json();
+  const paymentRequired = await firstResponse.json() as any;
+
+  // Extract amount from the first accepted requirement for referral signing
+  const amountMicros = parseInt(
+    paymentRequired?.accepts?.[0]?.amount ?? paymentRequired?.amount ?? "0",
+    10
+  );
 
   // Create payment payload using x402 client
   const { x402HTTPClient } = await import("@x402/core/client");
   const httpClient = new x402HTTPClient(client);
-  const paymentPayload = await httpClient.createPaymentPayload(paymentRequired);
+  const paymentPayload = await httpClient.createPaymentPayload(paymentRequired as any);
   const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload);
 
-  // Retry with payment
+  // Sign the referral claim if we have a wallet + key
+  if (REFERRER_WALLET && agentSecretKey) {
+    const referralHeaders = await signReferral(agentSecretKey, REFERRER_WALLET, slug, amountMicros);
+    Object.assign(paymentHeaders, referralHeaders);
+  }
+
+  // Retry with payment + referral signature
   const paidResponse = await fetch(url, {
     headers: { ...headers, ...paymentHeaders },
   });
@@ -310,21 +324,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "get_sentiment": {
         const token = a.token.toUpperCase();
         const api = KNOWN_APIS.find((x) => x.name === "sentiment-api")!;
-        const data = await callGatedApi(api.gateUrl, `/sentiment/${token}`);
+        const data = await callGatedApi(api.gateUrl, `/sentiment/${token}`, api.name);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       }
 
       case "get_technicals": {
         const token = a.token.toUpperCase();
         const api = KNOWN_APIS.find((x) => x.name === "technicals-api")!;
-        const data = await callGatedApi(api.gateUrl, `/technicals/${token}`);
+        const data = await callGatedApi(api.gateUrl, `/technicals/${token}`, api.name);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       }
 
       case "get_liquidations": {
         const token = a.token.toUpperCase();
         const api = KNOWN_APIS.find((x) => x.name === "liquidations-api")!;
-        const data = await callGatedApi(api.gateUrl, `/liquidations/${token}`);
+        const data = await callGatedApi(api.gateUrl, `/liquidations/${token}`, api.name);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       }
 
@@ -337,9 +351,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ];
 
         const [sentiment, technicals, liquidations] = await Promise.allSettled([
-          callGatedApi(sentimentApi.gateUrl, `/sentiment/${token}`),
-          callGatedApi(techApi.gateUrl, `/technicals/${token}`),
-          callGatedApi(liqApi.gateUrl, `/liquidations/${token}`),
+          callGatedApi(sentimentApi.gateUrl, `/sentiment/${token}`, sentimentApi.name),
+          callGatedApi(techApi.gateUrl, `/technicals/${token}`, techApi.name),
+          callGatedApi(liqApi.gateUrl, `/liquidations/${token}`, liqApi.name),
         ]);
 
         const result = {

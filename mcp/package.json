@@ -12,6 +12,7 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
+    "@noble/curves": "^1.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@solana/kit": "^5.5.1",
     "@x402/core": "^2.9.0",
