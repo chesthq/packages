@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @chest/upstream-proxy — generate a key-holding proxy template.
+ * @chest-gate/upstream-proxy — generate a key-holding proxy template.
  *
  * Goal: publisher wraps a paid third-party API (CoinGecko Pro, Helius, etc.)
  * without ever handing the API key to chest. The generated proxy holds the
@@ -9,7 +9,7 @@
  * points at the proxy URL.
  *
  * Usage:
- *   npx @chest/upstream-proxy init <name>
+ *   npx @chest-gate/upstream-proxy init <name>
  *     --target https://api.coingecko.com/v3
  *     --auth-header "x-cg-pro-api-key=$ENV:COINGECKO_KEY"
  *     [--allow-paths "/coins/*,/simple/*"]
