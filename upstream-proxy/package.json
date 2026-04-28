@@ -1,0 +1,25 @@
+{
+  "name": "@chest/upstream-proxy",
+  "version": "0.1.0",
+  "description": "Templated key-holding proxy: publishers wrap third-party paid APIs without exposing keys to chest gate",
+  "type": "module",
+  "bin": {
+    "chest-upstream-proxy": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "chalk": "^5.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  },
+  "files": [
+    "dist",
+    "template"
+  ]
+}
