@@ -1,7 +1,7 @@
 {
   "name": "@chest-gate/upstream-proxy",
-  "version": "0.1.0",
-  "description": "Templated key-holding proxy: publishers wrap third-party paid APIs without exposing keys to chest gate",
+  "version": "0.1.1",
+  "description": "Templated key-holding proxy: publishers wrap an upstream API without exposing keys to chest gate",
   "type": "module",
   "license": "MIT",
   "homepage": "https://chest.sh",

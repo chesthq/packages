@@ -2,17 +2,19 @@
 /**
  * @chest-gate/upstream-proxy — generate a key-holding proxy template.
  *
- * Goal: publisher wraps a paid third-party API (CoinGecko Pro, Helius, etc.)
- * without ever handing the API key to chest. The generated proxy holds the
- * key in its own env (Vercel project, Cloudflare Workers secret, AWS Secrets
- * Manager — whatever the publisher already runs). chest gate's --upstream
- * points at the proxy URL.
+ * Goal: publisher wraps an upstream API behind a Chest gate without ever
+ * handing the API key to chest. The generated proxy holds the key in its own
+ * env (Vercel project, Cloudflare Workers secret, AWS Secrets Manager —
+ * whatever the publisher already runs). chest gate's --upstream points at the
+ * proxy URL. Best fit for APIs you own, run, or are explicitly licensed to
+ * redistribute — many third-party providers' terms of service restrict
+ * proxying, so check before wrapping someone else's commercial endpoint.
  *
  * Usage:
  *   npx @chest-gate/upstream-proxy init <name>
- *     --target https://api.coingecko.com/v3
- *     --auth-header "x-cg-pro-api-key=$ENV:COINGECKO_KEY"
- *     [--allow-paths "/coins/*,/simple/*"]
+ *     --target https://api.example.com/v1
+ *     --auth-header "x-api-key=$ENV:UPSTREAM_KEY"
+ *     [--allow-paths "/v1/*"]
  *     [--strip-headers "authorization,cookie"]
  *
  * The generated directory is self-contained: its README explains how to set
@@ -50,7 +52,7 @@ function usage(extra?: string): never {
   console.error(`Usage: chest-upstream-proxy init <name> [flags]
 
 Required:
-  --target <url>              Third-party API origin to wrap.
+  --target <url>              Upstream API origin to wrap.
   --auth-header <name=value>  Header to inject. value may use $ENV:VARNAME.
 
 Optional:
@@ -60,9 +62,9 @@ Optional:
   --out <dir>                 Output directory (default ./<name>).
 
 Example:
-  chest-upstream-proxy init coingecko-pro \\
-    --target https://api.coingecko.com/v3 \\
-    --auth-header "x-cg-pro-api-key=\\$ENV:COINGECKO_KEY"
+  chest-upstream-proxy init my-api \\
+    --target https://api.example.com/v1 \\
+    --auth-header "x-api-key=\\$ENV:UPSTREAM_KEY"
 `);
   process.exit(1);
 }
