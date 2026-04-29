@@ -35,6 +35,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+export type { RequestEvent, SettledEvent } from "./hooks.js";
+
 const DEFAULT_CHEST_API = "https://chest.sh";
 
 /** Modes describe where the credential comes from. */

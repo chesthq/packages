@@ -96,9 +96,24 @@ call routed through their integration.
 
 If you want to route a referral split now, pass `referrerWallet` explicitly.
 
+## Hook event types (`v0.2.0`)
+
+The SDK re-exports the typed payloads emitted by the proxy's lifecycle
+hooks, so any caller — a deployed proxy, a webhook handler, an indexer —
+can import the same shapes:
+
+```ts
+import type { RequestEvent, SettledEvent } from "@chest-gate/sdk";
+```
+
+`RequestEvent` is fired before settlement (and can be rejected); `SettledEvent`
+extends it with the on-chain tx signature and predicted split amounts. See
+the [hook-logging example](../../examples/hook-logging) for end-to-end usage.
+
 ## See also
 
-- Example: [`examples/api-key-agent`](../../examples/api-key-agent)
+- Example: [`examples/api-key-agent`](../../examples/api-key-agent) — managed wallet client
+- Example: [`examples/hook-logging`](../../examples/hook-logging) — proxy lifecycle hooks
 - chest_splitter program (devnet): `9a6zrqau5xVEdxNqBUfL2G18WuryQbWeJScPAUHZvmmX`
 - Repo: <https://github.com/smd00/chest-gate>
 
