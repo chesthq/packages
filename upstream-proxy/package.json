@@ -10,12 +10,20 @@
     "url": "git+https://github.com/smd00/chest-gate.git",
     "directory": "packages/upstream-proxy"
   },
-  "keywords": ["x402", "chest", "chest-gate", "api", "monetization", "proxy", "solana"],
+  "keywords": [
+    "x402",
+    "chest",
+    "chest-gate",
+    "api",
+    "monetization",
+    "proxy",
+    "solana"
+  ],
   "engines": {
     "node": ">=20"
   },
   "bin": {
-    "chest-upstream-proxy": "./dist/cli.js"
+    "chest-upstream-proxy": "dist/cli.js"
   },
   "main": "./dist/cli.js",
   "scripts": {
