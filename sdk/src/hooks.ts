@@ -2,9 +2,9 @@
  * Lifecycle event payloads emitted by the Chest Gate proxy.
  *
  * These types are the contract between proxy implementations (which produce
- * the events) and consumer code (which observes them via `ProxyHooks` —
+ * the events) and consumer code (which observes them via `ProxyHooks`,
  * defined in `@chest/proxy`). They are exported from this SDK so any caller
- * — a deployed proxy, a webhook handler, an indexer — can import the same
+ *, a deployed proxy, a webhook handler, an indexer, can import the same
  * shape:
  *
  * ```ts
@@ -17,7 +17,7 @@
 
 /** Fired after route+price match and payment verification, before settlement. */
 export interface RequestEvent {
-  /** Gate slug — matches `ProxyConfig.name`. */
+  /** Gate slug, matches `ProxyConfig.name`. */
   gateSlug: string;
   /** HTTP method. */
   method: string;

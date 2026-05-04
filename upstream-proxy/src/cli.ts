@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * @chest-gate/upstream-proxy — generate a key-holding proxy template.
+ * @chest-gate/upstream-proxy, generate a key-holding proxy template.
  *
  * Goal: publisher wraps an upstream API behind a Chest gate without ever
  * handing the API key to chest. The generated proxy holds the key in its own
- * env (Vercel project, Cloudflare Workers secret, AWS Secrets Manager —
+ * env (Vercel project, Cloudflare Workers secret, AWS Secrets Manager,
  * whatever the publisher already runs). chest gate's --upstream points at the
  * proxy URL. Best fit for APIs you own, run, or are explicitly licensed to
- * redistribute — many third-party providers' terms of service restrict
+ * redistribute, many third-party providers' terms of service restrict
  * proxying, so check before wrapping someone else's commercial endpoint.
  *
  * Usage:
@@ -41,7 +41,7 @@ interface InitOptions {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// __dirname is dist/ in production, src/ in dev — the template lives at
+// __dirname is dist/ in production, src/ in dev, the template lives at
 // ../template relative to either.
 const TEMPLATE_DIR = resolvePath(__dirname, "..", "template");
 
@@ -126,7 +126,7 @@ function validate(opts: Partial<InitOptions>): InitOptions {
 
 /**
  * Substitute {{placeholders}} in template files. The set of placeholders is
- * deliberately small — adding more raises the surface area for bugs. Use
+ * deliberately small, adding more raises the surface area for bugs. Use
  * straightforward string replace; the templates aren't user-supplied content.
  */
 function applyVars(input: string, vars: Record<string, string>): string {

@@ -13,7 +13,7 @@
  *   - analyze_token      → convenience: parallel call to the trading data APIs
  *
  * Adding a new example API: extend KNOWN_APIS with one entry. No new tool
- * needed — call_api dispatches by name.
+ * needed, call_api dispatches by name.
  *
  * Usage (stdio):
  *   REFERRER_WALLET=<addr> AGENT_WALLET_PRIVATE_KEY='[1,2,3,...]' npx @chest/mcp
@@ -53,7 +53,7 @@ const REFERRER_WALLET = process.env.REFERRER_WALLET || "";
  */
 const REFERRER_PAYOUT_WALLET = process.env.REFERRER_PAYOUT_WALLET || "";
 
-/** Secret key for paying x402 API calls — JSON array [1,2,3,...] or base64 string. */
+/** Secret key for paying x402 API calls, JSON array [1,2,3,...] or base64 string. */
 const AGENT_PRIVATE_KEY_RAW = process.env.AGENT_WALLET_PRIVATE_KEY || "";
 
 // ─── Known API Registry ──────────────────────────────────────────────────────
@@ -65,11 +65,11 @@ interface ApiInfo {
   name: string;
   category: Category;
   description: string;
-  /** Default upstream URL — override per API via {NAME}_GATE_URL env. */
+  /** Default upstream URL, override per API via {NAME}_GATE_URL env. */
   gateUrl: string;
   /** Endpoints exposed by this API. Path → human description. */
   endpoints: Record<string, string>;
-  /** Per-call price in USD (display only — actual price comes from the 402 challenge). */
+  /** Per-call price in USD (display only, actual price comes from the 402 challenge). */
   price: string;
   /** Optional list of supported parameter values (e.g. tokens) for guidance. */
   supports?: string[];
@@ -81,7 +81,7 @@ interface ApiInfo {
  *   2. Append an entry below
  *   3. Set {SLUG}_GATE_URL in your env (or accept the localhost default)
  *
- * Endpoints whose price is free (e.g. /tokens) won't trigger a 402 — call_api
+ * Endpoints whose price is free (e.g. /tokens) won't trigger a 402, call_api
  * passes through the raw response.
  */
 const KNOWN_APIS: ApiInfo[] = [
@@ -125,7 +125,7 @@ const KNOWN_APIS: ApiInfo[] = [
   {
     name: "funding-rates",
     category: "trading",
-    description: "Perpetual futures funding rates across major venues — bullish/bearish bias signal",
+    description: "Perpetual futures funding rates across major venues, bullish/bearish bias signal",
     gateUrl: process.env.FUNDING_RATES_GATE_URL || "http://localhost:4013",
     endpoints: {
       "GET /funding": "All supported tokens at once",
@@ -138,7 +138,7 @@ const KNOWN_APIS: ApiInfo[] = [
   {
     name: "implied-volatility",
     category: "trading",
-    description: "Options implied volatility term structure (7d/30d/90d/180d) — risk pricing signal",
+    description: "Options implied volatility term structure (7d/30d/90d/180d), risk pricing signal",
     gateUrl: process.env.IMPLIED_VOLATILITY_GATE_URL || "http://localhost:4015",
     endpoints: {
       "GET /iv/:token": "IV term structure with skew",
@@ -225,7 +225,7 @@ const KNOWN_APIS: ApiInfo[] = [
   {
     name: "content-paywall",
     category: "content",
-    description: "Premium long-form articles — preview free, full read paid",
+    description: "Premium long-form articles, preview free, full read paid",
     gateUrl: process.env.CONTENT_PAYWALL_GATE_URL || "http://localhost:4005",
     endpoints: {
       "GET /articles": "List article previews (free)",
@@ -304,7 +304,7 @@ async function callGatedApi(
 
   const body = opts.body !== undefined ? JSON.stringify(opts.body) : undefined;
 
-  // First try — may be free, freebie, or session-cached.
+  // First try, may be free, freebie, or session-cached.
   const firstResponse = await fetch(url, { method, headers: baseHeaders, body });
 
   if (firstResponse.status !== 402) {
@@ -315,7 +315,7 @@ async function callGatedApi(
     return firstResponse.json();
   }
 
-  // 402 — payment required.
+  // 402, payment required.
   const client = await getPaymentClient();
   if (!client) {
     throw new Error(
@@ -334,7 +334,7 @@ async function callGatedApi(
   const paymentPayload = await httpClient.createPaymentPayload(paymentRequired as any);
   const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload);
 
-  // Sign the referral claim — proves we own REFERRER_WALLET so the splitter
+  // Sign the referral claim, proves we own REFERRER_WALLET so the splitter
   // routes the 10% commission to it (or the cold REFERRER_PAYOUT_WALLET).
   if (REFERRER_WALLET && agentSecretKey) {
     const referralHeaders = await signReferral(
@@ -375,7 +375,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "discover_apis",
       description:
         "List every Chest-gated API with pricing, endpoints, category, and supported parameters. " +
-        "Call this first to explore what's available — the registry covers trading data, AI inference, " +
+        "Call this first to explore what's available, the registry covers trading data, AI inference, " +
         "market data, content, and utility APIs. Use the returned `name` as the `api` argument to call_api.",
       inputSchema: {
         type: "object",
@@ -391,7 +391,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "get_api_info",
       description:
         "Get detailed info about one API including its on-chain discovery metadata (referrer commission rate, " +
-        "vault address, split config). Useful before paying — agents can decide whether the commission rate is worth it.",
+        "vault address, split config). Useful before paying, agents can decide whether the commission rate is worth it.",
       inputSchema: {
         type: "object",
         properties: {
@@ -439,9 +439,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "analyze_token",
       description:
-        "Comprehensive token analysis — calls sentiment, technicals, and liquidations APIs in parallel and returns the combined picture. " +
+        "Comprehensive token analysis, calls sentiment, technicals, and liquidations APIs in parallel and returns the combined picture. " +
         "Total cost: ~$0.011 (3 paid calls). Use this when you need a full market view in one shot. " +
-        "For deeper analysis (funding, IV, unlocks), pass `deep: true` — adds ~$0.009 and 3 more APIs.",
+        "For deeper analysis (funding, IV, unlocks), pass `deep: true`, adds ~$0.009 and 3 more APIs.",
       inputSchema: {
         type: "object",
         properties: {
@@ -491,7 +491,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const r = await fetch(`${api.gateUrl}/.well-known/chest.json`);
           if (r.ok) discovery = await r.json();
         } catch {
-          // Gate may not be running — return registry info only.
+          // Gate may not be running, return registry info only.
         }
         return {
           content: [{ type: "text", text: JSON.stringify({ ...api, discovery }, null, 2) }],
@@ -509,7 +509,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const path = a.path as string;
         if (!path?.startsWith("/")) {
           return {
-            content: [{ type: "text", text: `Path must start with '/' — got '${path}'` }],
+            content: [{ type: "text", text: `Path must start with '/', got '${path}'` }],
             isError: true,
           };
         }
@@ -571,7 +571,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-/** Helper for analyze_token — looks up an API and calls one of its endpoints. */
+/** Helper for analyze_token, looks up an API and calls one of its endpoints. */
 async function callForToken(apiName: string, path: string): Promise<any> {
   const api = findApi(apiName);
   if (!api) throw new Error(`API ${apiName} not in registry`);
@@ -585,11 +585,11 @@ await server.connect(transport);
 
 // Log to stderr (stdout is reserved for MCP protocol).
 if (!REFERRER_WALLET) {
-  console.error("[chest-mcp] Warning: REFERRER_WALLET not set — not earning commissions");
+  console.error("[chest-mcp] Warning: REFERRER_WALLET not set, not earning commissions");
 } else {
   console.error(`[chest-mcp] Referrer: ${REFERRER_WALLET} (earning commission per paid call)`);
 }
 if (!AGENT_PRIVATE_KEY_RAW) {
-  console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set — cannot pay for API calls beyond freebies");
+  console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
 }
-console.error(`[chest-mcp] Ready — ${KNOWN_APIS.length} APIs registered`);
+console.error(`[chest-mcp] Ready, ${KNOWN_APIS.length} APIs registered`);

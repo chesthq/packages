@@ -1,6 +1,6 @@
 # @chest-gate/sdk
 
-Drop-in `paidFetch()` that pays x402 gates from any agent — managed wallet
+Drop-in `paidFetch()` that pays x402 gates from any agent, managed wallet
 (Chest API key), Privy login, or local keypair.
 
 ```bash
@@ -17,7 +17,7 @@ const { body, receipt, payer } = await paidFetch(
   {
     mode: "api-key",
     apiKey: process.env.CHEST_API_KEY,        // mint at chest.sh/app/keys
-    appSlug: "@alice/market-read",            // optional — declares the calling App
+    appSlug: "@alice/market-read",            // optional, declares the calling App
   },
 );
 ```
@@ -37,7 +37,7 @@ All three use the same `paidFetch(url, opts)` signature.
 | **`privy`** | `~/.chest/auth.json` (written by `chest login`) | local CLI / dev |
 | **`local`** | `~/.chest/agent.json` (Solana secret-key JSON) | self-custody, offline-signed |
 
-`api-key` and `privy` modes are functionally identical at the wire level —
+`api-key` and `privy` modes are functionally identical at the wire level,
 both POST the 402 challenge to `chest.sh/api/agent/sign` with a bearer token,
 and chest.sh signs server-side via Privy. The only difference is where the
 SDK reads the token from.
@@ -62,8 +62,8 @@ You almost never need to pass `mode` explicitly.
 type PaidFetchOptions = {
   init?: RequestInit;            // forwarded to fetch() for the initial request
   mode?: "api-key" | "privy" | "local" | "auto";
-  apiKey?: string;               // ca_live_… — overrides file-based modes
-  appSlug?: string;              // @author/app-name — analytics + future referrer resolution
+  apiKey?: string;               // ca_live_…, overrides file-based modes
+  appSlug?: string;              // @author/app-name, analytics + future referrer resolution
   referrerWallet?: string;       // explicit referrer; overrides manifest resolution
   chestApi?: string;             // override https://chest.sh
   authFile?: string;             // override ~/.chest/auth.json (privy mode)
@@ -91,7 +91,7 @@ type PaidFetchResult = {
 Pass `appSlug: "@alice/market-read"` when you're calling a gate on behalf of
 an App (Claude skill, MCP server, agent integration). The server logs it
 today and will resolve the **referrer wallet** from the App's manifest in a
-future release — so the App's author earns a referral split on every paid
+future release, so the App's author earns a referral split on every paid
 call routed through their integration.
 
 If you want to route a referral split now, pass `referrerWallet` explicitly.
@@ -99,7 +99,7 @@ If you want to route a referral split now, pass `referrerWallet` explicitly.
 ## Hook event types (`v0.2.0`)
 
 The SDK re-exports the typed payloads emitted by the proxy's lifecycle
-hooks, so any caller — a deployed proxy, a webhook handler, an indexer —
+hooks, so any caller, a deployed proxy, a webhook handler, an indexer,
 can import the same shapes:
 
 ```ts
@@ -112,8 +112,8 @@ the [hook-logging example](../../examples/hook-logging) for end-to-end usage.
 
 ## See also
 
-- Example: [`examples/api-key-agent`](../../examples/api-key-agent) — managed wallet client
-- Example: [`examples/hook-logging`](../../examples/hook-logging) — proxy lifecycle hooks
+- Example: [`examples/api-key-agent`](../../examples/api-key-agent), managed wallet client
+- Example: [`examples/hook-logging`](../../examples/hook-logging), proxy lifecycle hooks
 - chest_splitter program (devnet): `9a6zrqau5xVEdxNqBUfL2G18WuryQbWeJScPAUHZvmmX`
 - Repo: <https://github.com/smd00/chest-gate>
 

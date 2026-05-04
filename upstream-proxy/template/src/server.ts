@@ -1,5 +1,5 @@
 /**
- * Local dev entry — `npm run dev` to spin this up on http://localhost:8787.
+ * Local dev entry, `npm run dev` to spin this up on http://localhost:8787.
  * Vercel uses ../index.js (the bundled handler) directly; this file isn't
  * deployed.
  */

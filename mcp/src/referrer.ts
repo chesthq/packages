@@ -2,7 +2,7 @@
  * Referral signing for the Chest MCP server.
  *
  * Signs a canonical message with the agent's hot key to prove wallet ownership.
- * Optionally commits a separate cold wallet for payout — so if the hot key is
+ * Optionally commits a separate cold wallet for payout, so if the hot key is
  * compromised, commission funds go to the cold wallet instead.
  *
  * Message format:
@@ -30,7 +30,7 @@ function buildReferralMessage(
 /**
  * Sign a referral claim and return the headers to inject into the API request.
  *
- * @param privateKeyBytes - 64-byte ed25519 secret key (or 32-byte seed — auto-detected)
+ * @param privateKeyBytes - 64-byte ed25519 secret key (or 32-byte seed, auto-detected)
  * @param signerPubkey    - Base58 public key of the signing key (hot wallet)
  * @param slug            - API name matching the split config
  * @param amountMicros    - USDC atomic units being paid

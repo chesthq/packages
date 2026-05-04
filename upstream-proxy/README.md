@@ -2,7 +2,7 @@
 
 Generate a key-holding proxy template for [Chest Gate](https://chest.sh).
 
-When you wrap an upstream API behind a Chest gate, the publisher's API key has to live somewhere. This CLI generates a tiny, self-contained Hono proxy you deploy to Vercel — your key lives in your env, **never in chest's infrastructure**.
+When you wrap an upstream API behind a Chest gate, the publisher's API key has to live somewhere. This CLI generates a tiny, self-contained Hono proxy you deploy to Vercel, your key lives in your env, **never in chest's infrastructure**.
 
 ```
 agent ──▶ gate.chest.sh/g/<slug>/* ──▶ your proxy ──▶ upstream API
@@ -24,11 +24,11 @@ This drops a directory you can deploy to Vercel as-is.
 
 ## What the generated proxy enforces, per request
 
-1. **Path allowlist** — rejects requests outside the patterns you allowed.
-2. **Header strip** — drops caller-supplied `authorization` / `cookie` / `x-api-key*` from the inbound request before forwarding.
-3. **Auth inject** — adds exactly one upstream auth header, value sourced from `process.env`.
-4. **Egress allowlist** — only the configured `--target` host is callable. SSRF-proof.
-5. **Response sanitisation** — `set-cookie` and `www-authenticate` stripped from upstream responses.
+1. **Path allowlist**, rejects requests outside the patterns you allowed.
+2. **Header strip**, drops caller-supplied `authorization` / `cookie` / `x-api-key*` from the inbound request before forwarding.
+3. **Auth inject**, adds exactly one upstream auth header, value sourced from `process.env`.
+4. **Egress allowlist**, only the configured `--target` host is callable. SSRF-proof.
+5. **Response sanitisation**, `set-cookie` and `www-authenticate` stripped from upstream responses.
 
 ## Wire it through Chest
 

@@ -1,5 +1,5 @@
 /**
- * @chest-gate/sdk — pay x402 gates from any agent.
+ * @chest-gate/sdk, pay x402 gates from any agent.
  *
  * Three credential modes, all behind the same `paidFetch(url, opts)` API:
  *
@@ -10,8 +10,8 @@
  *
  * - **privy** (CLI / local development): the user has logged in via the
  *   chest.sh dashboard with `chest login`. The token is read from
- *   `~/.chest/auth.json`. Functionally identical to api-key mode — same
- *   endpoint, same Privy-managed wallet — just sourced from a file instead
+ *   `~/.chest/auth.json`. Functionally identical to api-key mode, same
+ *   endpoint, same Privy-managed wallet, just sourced from a file instead
  *   of an env var.
  *
  * - **local** (self-custody fallback): a Solana secret-key JSON file at
@@ -54,7 +54,7 @@ export interface PaidFetchOptions {
    */
   apiKey?: string;
   /**
-   * Declares which App is calling — `@author/app-name`. The server logs it
+   * Declares which App is calling, `@author/app-name`. The server logs it
    * and will resolve the referrer wallet from the App's manifest in a
    * future release. Pass `referrerWallet` to override.
    */
@@ -94,7 +94,7 @@ interface AuthFile {
  * Pay an x402 gate. On 402 it builds the payment payload, retries with the
  * `x-payment` header, and returns the final body + receipt.
  *
- * Throws if the gate doesn't return 402 (i.e. nothing to pay) — callers that
+ * Throws if the gate doesn't return 402 (i.e. nothing to pay), callers that
  * want to handle freebie / 200-on-first-try should catch and inspect.
  */
 export async function paidFetch(
@@ -167,7 +167,7 @@ function resolveMode(opts: PaidFetchOptions): "api-key" | "privy" | "local" {
 
   throw new Error(
     "No agent credentials found. Either:\n" +
-      "  - pass `apiKey` (or set CHEST_API_KEY) — mint at https://chest.sh/app/keys\n" +
+      "  - pass `apiKey` (or set CHEST_API_KEY), mint at https://chest.sh/app/keys\n" +
       `  - run \`chest login\` to populate ${defaultAuthFile()}\n` +
       `  - place a Solana keypair JSON at ${defaultKeypairFile()}`,
   );
