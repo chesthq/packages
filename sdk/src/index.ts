@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 export type { RequestEvent, SettledEvent } from "./hooks.js";
 
-const DEFAULT_CHEST_API = "https://chest.sh";
+const DEFAULT_CHEST_API = "https://gate.chest.sh";
 
 /** Modes describe where the credential comes from. */
 export type PaidFetchMode = "api-key" | "privy" | "local" | "auto";

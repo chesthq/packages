@@ -66,7 +66,7 @@ type PaidFetchOptions = {
   apiKey?: string;               // ca_live_…, overrides file-based modes
   appSlug?: string;              // @author/app-name, analytics + future referrer resolution
   referrerWallet?: string;       // explicit referrer; overrides manifest resolution
-  chestApi?: string;             // override https://chest.sh
+  chestApi?: string;             // override https://gate.chest.sh
   keypairFile?: string;          // override ~/.chest/agent.json (local mode)
 };
 ```
