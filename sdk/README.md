@@ -1,7 +1,7 @@
 # @chest-gate/sdk
 
-Drop-in `paidFetch()` that pays x402 gates from any agent, managed wallet
-(Chest API key), Privy login, or local keypair.
+Drop-in `paidFetch()` that pays x402 gates from any agent. Use a managed
+wallet (Chest API key) or a local keypair.
 
 ```bash
 npm install @chest-gate/sdk
@@ -27,22 +27,24 @@ payload, returns the `xPayment` header. The gate atomically settles USDC
 across provider, referrer, and protocol via the `chest_splitter` Anchor
 program on Solana.
 
-## Three credential modes
+## Two credential modes
 
-All three use the same `paidFetch(url, opts)` signature.
+Both use the same `paidFetch(url, opts)` signature.
 
 | Mode | Where the credential lives | Best for |
 |---|---|---|
 | **`api-key`** | `apiKey` option or `CHEST_API_KEY` env | deployed agents, MCP servers, CI jobs |
-| **`privy`** | `~/.chest/auth.json` (written by `chest login`) | local CLI / dev |
 | **`local`** | `~/.chest/agent.json` (Solana secret-key JSON) | self-custody, offline-signed |
 
-`api-key` and `privy` modes are functionally identical at the wire level,
-both POST the 402 challenge to `chest.sh/api/agent/sign` with a bearer token,
-and chest.sh signs server-side via Privy. The only difference is where the
-SDK reads the token from.
+`api-key` mode POSTs the 402 challenge to `chest.sh/api/agent/sign` with a
+bearer token, and chest.sh signs server-side via a Privy-managed wallet.
 
 `local` mode signs locally; `chest.sh` is not in the path.
+
+> **Coming soon**: a `chest login` CLI command that writes a token to
+> `~/.chest/auth.json` so local development doesn't need a Chest API key in
+> your shell. Until then, mint a key at chest.sh/app/keys and use api-key
+> mode for everything.
 
 ## Auto-detect
 
@@ -50,9 +52,8 @@ If `mode` is unset (or `"auto"`):
 
 1. `apiKey` option provided  → `api-key`
 2. `CHEST_API_KEY` env set   → `api-key`
-3. `~/.chest/auth.json`      → `privy`
-4. `~/.chest/agent.json`     → `local`
-5. throws with a helpful message
+3. `~/.chest/agent.json`     → `local`
+4. throws with a helpful message
 
 You almost never need to pass `mode` explicitly.
 
@@ -61,12 +62,11 @@ You almost never need to pass `mode` explicitly.
 ```ts
 type PaidFetchOptions = {
   init?: RequestInit;            // forwarded to fetch() for the initial request
-  mode?: "api-key" | "privy" | "local" | "auto";
+  mode?: "api-key" | "local" | "auto";
   apiKey?: string;               // ca_live_…, overrides file-based modes
   appSlug?: string;              // @author/app-name, analytics + future referrer resolution
   referrerWallet?: string;       // explicit referrer; overrides manifest resolution
   chestApi?: string;             // override https://chest.sh
-  authFile?: string;             // override ~/.chest/auth.json (privy mode)
   keypairFile?: string;          // override ~/.chest/agent.json (local mode)
 };
 ```
