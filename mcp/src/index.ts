@@ -61,7 +61,13 @@ const CHEST_GATE_BASE_URL = process.env.CHEST_GATE_BASE_URL || "https://gate.che
 
 const gate = (slug: string) => `${CHEST_GATE_BASE_URL}/g/${slug}`;
 
-// ─── Known API Registry ──────────────────────────────────────────────────────
+// ─── API Registry ────────────────────────────────────────────────────────────
+//
+// Loaded dynamically from the live Chest registry at startup and refreshed on
+// a TTL. The package no longer ships a hardcoded list, so newly published
+// gates appear without a release. A small fallback list (FALLBACK_APIS) keeps
+// the server functional when /api/registry is unreachable (offline dev,
+// outage). Per-API gate URLs remain overrideable via {SLUG}_GATE_URL env vars.
 
 type Category = "trading" | "ai" | "data" | "content" | "utility";
 
@@ -70,119 +76,76 @@ interface ApiInfo {
   name: string;
   category: Category;
   description: string;
-  /** Default upstream URL, override per API via {NAME}_GATE_URL env. */
+  /** Default upstream URL, override per API via {SLUG}_GATE_URL env. */
   gateUrl: string;
   /** Endpoints exposed by this API. Path → human description. */
   endpoints: Record<string, string>;
   /** Per-call price in USD (display only, actual price comes from the 402 challenge). */
   price: string;
-  /** Optional list of supported parameter values (e.g. tokens) for guidance. */
-  supports?: string[];
+}
+
+function isCategory(s: unknown): s is Category {
+  return s === "trading" || s === "ai" || s === "data" || s === "content" || s === "utility";
+}
+
+/** Env override key for a slug, e.g. "sentiment-api" → "SENTIMENT_API_GATE_URL". */
+function gateUrlEnvKey(slug: string): string {
+  return `${slug.toUpperCase().replace(/-/g, "_")}_GATE_URL`;
+}
+
+function gateUrlFor(slug: string): string {
+  return process.env[gateUrlEnvKey(slug)] ?? gate(slug);
+}
+
+interface RegistryDeployment {
+  slug: string;
+  name?: string | null;
+  description?: string | null;
+  category?: string | null;
+  price?: string | number | null;
+  routePrices?: Record<string, string> | null;
+}
+
+interface BazaarEndpoint {
+  path: string;
+  description?: string;
+  price?: string;
 }
 
 /**
- * Every Chest example API lives here. To add a new one:
- *   1. Build it under examples/<slug>/
- *   2. Append an entry below
- *   3. Set {SLUG}_GATE_URL in your env (or accept the localhost default)
- *
- * Endpoints whose price is free (e.g. /tokens) won't trigger a 402, call_api
- * passes through the raw response.
+ * Best-effort fetch of a gate's discovery doc to recover the per-endpoint
+ * path table (which the registry summary doesn't include). Returns an empty
+ * map on any failure, the API still works without it, agents just lose
+ * endpoint hints in `discover_apis`.
  */
-const KNOWN_APIS: ApiInfo[] = [
-  // ─── Trading data ─────────────────────────────────────────────────────────
-  {
-    name: "sentiment-api",
-    category: "trading",
-    description: "Real-time crypto market sentiment powered by Perplexity AI",
-    gateUrl: process.env.SENTIMENT_GATE_URL || gate("sentiment-api"),
-    endpoints: {
-      "GET /sentiment/:token": "Sentiment score (-1 to +1), label, summary, sources",
-      "GET /tokens": "List supported tokens (free)",
-    },
-    price: "$0.005",
-    supports: ["SOL", "BTC", "ETH", "JUP", "BONK", "RAY", "WIF", "JTO", "PYTH", "ORCA"],
-  },
-  {
-    name: "technicals-api",
-    category: "trading",
-    description: "Real-time technical indicators (RSI, MACD, EMA) powered by Binance",
-    gateUrl: process.env.TECHNICALS_GATE_URL || gate("technicals-api"),
-    endpoints: {
-      "GET /technicals/:token": "RSI-14, MACD, EMA-20/50/200, trend signal",
-      "GET /tokens": "List supported tokens (free)",
-    },
-    price: "$0.003",
-    supports: ["SOL", "BTC", "ETH", "JUP", "BONK", "RAY", "WIF", "JTO", "PYTH", "ORCA"],
-  },
-  {
-    name: "liquidations-api",
-    category: "trading",
-    description: "24h liquidation totals + key levels powered by Coinglass",
-    gateUrl: process.env.LIQUIDATIONS_GATE_URL || gate("liquidations-api"),
-    endpoints: {
-      "GET /liquidations/:token": "Long/short liquidations, key levels, open interest",
-      "GET /tokens": "List supported tokens (free)",
-    },
-    price: "$0.003",
-    supports: ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT"],
-  },
-  {
-    name: "funding-rates",
-    category: "trading",
-    description: "Perpetual futures funding rates across major venues, bullish/bearish bias signal",
-    gateUrl: process.env.FUNDING_RATES_GATE_URL || gate("funding-rates"),
-    endpoints: {
-      "GET /funding": "All supported tokens at once",
-      "GET /funding/:token": "Funding rate for one token",
-      "GET /tokens": "List supported tokens (free)",
-    },
-    price: "$0.002",
-    supports: ["BTC", "ETH", "SOL", "BNB", "AVAX", "ARB", "OP", "JUP", "WIF", "BONK"],
-  },
-  {
-    name: "implied-volatility",
-    category: "trading",
-    description: "Options implied volatility term structure (7d/30d/90d/180d), risk pricing signal",
-    gateUrl: process.env.IMPLIED_VOLATILITY_GATE_URL || gate("implied-volatility"),
-    endpoints: {
-      "GET /iv/:token": "IV term structure with skew",
-      "GET /tokens": "List supported tokens (free)",
-    },
-    price: "$0.004",
-    supports: ["BTC", "ETH"],
-  },
-  {
-    name: "token-unlocks",
-    category: "trading",
-    description: "Upcoming token unlock schedule with sell-pressure signals (cliff vs vesting)",
-    gateUrl: process.env.TOKEN_UNLOCKS_GATE_URL || gate("token-unlocks"),
-    endpoints: {
-      "GET /unlocks": "All upcoming unlocks across tracked tokens",
-      "GET /unlocks/:token": "Unlock schedule for one token",
-      "GET /tokens": "List supported tokens (free)",
-    },
-    price: "$0.003",
-  },
-  {
-    name: "trading-signals",
-    category: "trading",
-    description: "Aggregated long/short signals across major SOL/USDC, ETH/USDC pairs",
-    gateUrl: process.env.TRADING_SIGNALS_GATE_URL || gate("trading-signals"),
-    endpoints: {
-      "GET /signals": "All signals across pairs",
-      "GET /signals/:pair": "Signal for one pair (use SOL-USDC, ETH-USDC format)",
-      "GET /pairs": "List supported pairs (free)",
-    },
-    price: "$0.004",
-  },
+async function fetchGateEndpoints(gateUrl: string): Promise<Record<string, string>> {
+  try {
+    const r = await fetch(`${gateUrl}/.well-known/chest.json`);
+    if (!r.ok) return {};
+    const body = await r.json() as { apps?: { bazaar?: { endpoints?: BazaarEndpoint[] } } };
+    const eps = body.apps?.bazaar?.endpoints ?? [];
+    const out: Record<string, string> = {};
+    for (const e of eps) {
+      if (typeof e.path !== "string") continue;
+      out[e.path] = e.description ?? "";
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
 
-  // ─── Market data ──────────────────────────────────────────────────────────
+/**
+ * Tiny offline fallback. Used only when /api/registry is unreachable AND we
+ * have no cached registry yet. Keep this short, the live registry is the
+ * source of truth, this just unblocks first-call dev with no network.
+ */
+const FALLBACK_APIS: ApiInfo[] = [
   {
     name: "market-data",
     category: "data",
     description: "Spot prices and L2 orderbook snapshots for major tokens",
-    gateUrl: process.env.MARKET_DATA_GATE_URL || gate("market-data"),
+    gateUrl: gateUrlFor("market-data"),
     endpoints: {
       "GET /prices": "All token spot prices",
       "GET /price/:token": "Price for one token",
@@ -191,69 +154,60 @@ const KNOWN_APIS: ApiInfo[] = [
     },
     price: "$0.001",
   },
-  {
-    name: "polymarket-prices",
-    category: "data",
-    description: "Live odds from Polymarket prediction markets",
-    gateUrl: process.env.POLYMARKET_PRICES_GATE_URL || gate("polymarket-prices"),
-    endpoints: {
-      "GET /markets": "All active markets with prices",
-      "GET /markets/:slug": "One market by slug (e.g. 'will-btc-hit-100k-by-2026')",
-    },
-    price: "$0.002",
-  },
-  {
-    name: "weather-api",
-    category: "data",
-    description: "Current conditions for major cities (demo / utility example)",
-    gateUrl: process.env.WEATHER_GATE_URL || gate("weather-api"),
-    endpoints: {
-      "GET /weather/:city": "Current conditions",
-      "GET /cities": "List supported cities (free)",
-    },
-    price: "$0.001",
-  },
-
-  // ─── AI / content ─────────────────────────────────────────────────────────
-  {
-    name: "ai-inference",
-    category: "ai",
-    description: "Pay-per-call inference: sentiment classification, summarization, topic tagging",
-    gateUrl: process.env.AI_INFERENCE_GATE_URL || gate("ai-inference"),
-    endpoints: {
-      "POST /sentiment": "{ text } → sentiment score + label",
-      "POST /summarize": "{ text } → short summary",
-      "POST /classify": "{ text } → topic category",
-    },
-    price: "$0.01",
-  },
-  {
-    name: "content-paywall",
-    category: "content",
-    description: "Premium long-form articles, preview free, full read paid",
-    gateUrl: process.env.CONTENT_PAYWALL_GATE_URL || gate("content-paywall"),
-    endpoints: {
-      "GET /articles": "List article previews (free)",
-      "GET /articles/:id/preview": "Preview only (free)",
-      "GET /articles/:id": "Full article (paid)",
-    },
-    price: "$0.05",
-  },
-  {
-    name: "web-scraper",
-    category: "data",
-    description: "On-demand structured scrape across 5 categories (news, ecommerce, classifieds, jobs, real estate)",
-    gateUrl: process.env.WEB_SCRAPER_GATE_URL || gate("web-scraper"),
-    endpoints: {
-      "GET /scrape/:category": "Scrape results for one category",
-      "GET /categories": "List supported categories (free)",
-    },
-    price: "$0.02",
-  },
 ];
 
-function findApi(name: string): ApiInfo | undefined {
-  return KNOWN_APIS.find((a) => a.name === name);
+const REGISTRY_TTL_MS = 10 * 60_000;
+let cachedRegistry: ApiInfo[] | null = null;
+let cachedAt = 0;
+let inflight: Promise<ApiInfo[]> | null = null;
+
+async function loadRegistry(): Promise<ApiInfo[]> {
+  const now = Date.now();
+  if (cachedRegistry && now - cachedAt < REGISTRY_TTL_MS) return cachedRegistry;
+  if (inflight) return inflight;
+
+  inflight = (async () => {
+    try {
+      const r = await fetch(`${CHEST_GATE_BASE_URL}/api/registry`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const body = await r.json() as { deployments?: RegistryDeployment[] };
+      const deployments = body.deployments ?? [];
+
+      const apis = await Promise.all(
+        deployments.map(async (d): Promise<ApiInfo> => {
+          const gateUrl = gateUrlFor(d.slug);
+          const endpoints = await fetchGateEndpoints(gateUrl);
+          return {
+            name: d.slug,
+            category: isCategory(d.category) ? d.category : "data",
+            description: d.description ?? d.name ?? d.slug,
+            gateUrl,
+            endpoints,
+            price: d.price != null ? `$${d.price}` : "",
+          };
+        }),
+      );
+
+      cachedRegistry = apis;
+      cachedAt = Date.now();
+      return apis;
+    } catch (err) {
+      console.error(
+        `[chest-mcp] registry fetch failed: ${(err as Error).message}, ` +
+        `${cachedRegistry ? "using stale cache" : "using fallback"}`,
+      );
+      return cachedRegistry ?? FALLBACK_APIS;
+    } finally {
+      inflight = null;
+    }
+  })();
+
+  return inflight;
+}
+
+async function findApi(name: string): Promise<ApiInfo | undefined> {
+  const apis = await loadRegistry();
+  return apis.find((a) => a.name === name);
 }
 
 // ─── x402 Payment Client ─────────────────────────────────────────────────────
@@ -372,10 +326,10 @@ const server = new Server(
   { capabilities: { tools: {} } }
 );
 
-const apiNames = KNOWN_APIS.map((a) => a.name);
-
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const apis = await loadRegistry();
+  const apiNames = apis.map((a) => a.name);
+  return { tools: [
     {
       name: "discover_apis",
       description:
@@ -462,8 +416,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["token"],
       },
     },
-  ],
-}));
+  ] };
+});
 
 server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
   const { name, arguments: args } = request.params;
@@ -472,19 +426,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
   try {
     switch (name) {
       case "discover_apis": {
+        const apis = await loadRegistry();
         const cat = a.category as string | undefined;
-        const filtered = cat ? KNOWN_APIS.filter((x) => x.category === cat) : KNOWN_APIS;
+        const filtered = cat ? apis.filter((x) => x.category === cat) : apis;
         return {
           content: [{ type: "text", text: JSON.stringify(filtered, null, 2) }],
         };
       }
 
       case "get_api_info": {
-        const api = findApi(a.api as string);
+        const api = await findApi(a.api as string);
         if (!api) {
+          const apis = await loadRegistry();
           return {
             content: [
-              { type: "text", text: `Unknown API '${a.api}'. Available: ${apiNames.join(", ")}` },
+              { type: "text", text: `Unknown API '${a.api}'. Available: ${apis.map((x) => x.name).join(", ")}` },
             ],
             isError: true,
           };
@@ -504,7 +460,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       }
 
       case "call_api": {
-        const api = findApi(a.api as string);
+        const api = await findApi(a.api as string);
         if (!api) {
           return {
             content: [{ type: "text", text: `Unknown API '${a.api}'` }],
@@ -578,7 +534,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 
 /** Helper for analyze_token, looks up an API and calls one of its endpoints. */
 async function callForToken(apiName: string, path: string): Promise<any> {
-  const api = findApi(apiName);
+  const api = await findApi(apiName);
   if (!api) throw new Error(`API ${apiName} not in registry`);
   return callGatedApi(api.gateUrl, path, api.name);
 }
@@ -597,4 +553,11 @@ if (!REFERRER_WALLET) {
 if (!AGENT_PRIVATE_KEY_RAW) {
   console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
 }
-console.error(`[chest-mcp] Ready, ${KNOWN_APIS.length} APIs registered`);
+
+// Warm the registry so the first ListTools call doesn't pay the fan-out
+// latency. Failures are non-fatal: loadRegistry returns the fallback.
+const initialRegistry = await loadRegistry();
+const source = cachedRegistry === initialRegistry ? "live registry" : "fallback";
+console.error(
+  `[chest-mcp] Ready, ${initialRegistry.length} APIs registered (${source}: ${CHEST_GATE_BASE_URL})`,
+);
