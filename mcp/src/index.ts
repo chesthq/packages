@@ -16,14 +16,14 @@
  * needed, call_api dispatches by name.
  *
  * Usage (stdio):
- *   REFERRER_WALLET=<addr> AGENT_WALLET_PRIVATE_KEY='[1,2,3,...]' npx @chest/mcp
+ *   REFERRER_WALLET=<addr> AGENT_WALLET_PRIVATE_KEY='[1,2,3,...]' npx @chest-gate/mcp
  *
  * Claude Desktop config (~/.config/claude/claude_desktop_config.json):
  *   {
  *     "mcpServers": {
  *       "chest": {
- *         "command": "node",
- *         "args": ["/path/to/chest-gate/packages/mcp/dist/index.js"],
+ *         "command": "npx",
+ *         "args": ["-y", "@chest-gate/mcp"],
  *         "env": {
  *           "REFERRER_WALLET": "YOUR_SOLANA_WALLET_ADDRESS",
  *           "AGENT_WALLET_PRIVATE_KEY": "[1,2,3,...]"
@@ -55,6 +55,11 @@ const REFERRER_PAYOUT_WALLET = process.env.REFERRER_PAYOUT_WALLET || "";
 
 /** Secret key for paying x402 API calls, JSON array [1,2,3,...] or base64 string. */
 const AGENT_PRIVATE_KEY_RAW = process.env.AGENT_WALLET_PRIVATE_KEY || "";
+
+/** Base URL of the Chest gate. Per-API URLs default to {BASE}/g/{slug}. */
+const CHEST_GATE_BASE_URL = process.env.CHEST_GATE_BASE_URL || "https://gate.chest.sh";
+
+const gate = (slug: string) => `${CHEST_GATE_BASE_URL}/g/${slug}`;
 
 // ─── Known API Registry ──────────────────────────────────────────────────────
 
@@ -90,7 +95,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "sentiment-api",
     category: "trading",
     description: "Real-time crypto market sentiment powered by Perplexity AI",
-    gateUrl: process.env.SENTIMENT_GATE_URL || "http://localhost:4010",
+    gateUrl: process.env.SENTIMENT_GATE_URL || gate("sentiment-api"),
     endpoints: {
       "GET /sentiment/:token": "Sentiment score (-1 to +1), label, summary, sources",
       "GET /tokens": "List supported tokens (free)",
@@ -102,7 +107,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "technicals-api",
     category: "trading",
     description: "Real-time technical indicators (RSI, MACD, EMA) powered by Binance",
-    gateUrl: process.env.TECHNICALS_GATE_URL || "http://localhost:4011",
+    gateUrl: process.env.TECHNICALS_GATE_URL || gate("technicals-api"),
     endpoints: {
       "GET /technicals/:token": "RSI-14, MACD, EMA-20/50/200, trend signal",
       "GET /tokens": "List supported tokens (free)",
@@ -114,7 +119,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "liquidations-api",
     category: "trading",
     description: "24h liquidation totals + key levels powered by Coinglass",
-    gateUrl: process.env.LIQUIDATIONS_GATE_URL || "http://localhost:4012",
+    gateUrl: process.env.LIQUIDATIONS_GATE_URL || gate("liquidations-api"),
     endpoints: {
       "GET /liquidations/:token": "Long/short liquidations, key levels, open interest",
       "GET /tokens": "List supported tokens (free)",
@@ -126,7 +131,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "funding-rates",
     category: "trading",
     description: "Perpetual futures funding rates across major venues, bullish/bearish bias signal",
-    gateUrl: process.env.FUNDING_RATES_GATE_URL || "http://localhost:4013",
+    gateUrl: process.env.FUNDING_RATES_GATE_URL || gate("funding-rates"),
     endpoints: {
       "GET /funding": "All supported tokens at once",
       "GET /funding/:token": "Funding rate for one token",
@@ -139,7 +144,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "implied-volatility",
     category: "trading",
     description: "Options implied volatility term structure (7d/30d/90d/180d), risk pricing signal",
-    gateUrl: process.env.IMPLIED_VOLATILITY_GATE_URL || "http://localhost:4015",
+    gateUrl: process.env.IMPLIED_VOLATILITY_GATE_URL || gate("implied-volatility"),
     endpoints: {
       "GET /iv/:token": "IV term structure with skew",
       "GET /tokens": "List supported tokens (free)",
@@ -151,7 +156,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "token-unlocks",
     category: "trading",
     description: "Upcoming token unlock schedule with sell-pressure signals (cliff vs vesting)",
-    gateUrl: process.env.TOKEN_UNLOCKS_GATE_URL || "http://localhost:4016",
+    gateUrl: process.env.TOKEN_UNLOCKS_GATE_URL || gate("token-unlocks"),
     endpoints: {
       "GET /unlocks": "All upcoming unlocks across tracked tokens",
       "GET /unlocks/:token": "Unlock schedule for one token",
@@ -163,7 +168,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "trading-signals",
     category: "trading",
     description: "Aggregated long/short signals across major SOL/USDC, ETH/USDC pairs",
-    gateUrl: process.env.TRADING_SIGNALS_GATE_URL || "http://localhost:4001",
+    gateUrl: process.env.TRADING_SIGNALS_GATE_URL || gate("trading-signals"),
     endpoints: {
       "GET /signals": "All signals across pairs",
       "GET /signals/:pair": "Signal for one pair (use SOL-USDC, ETH-USDC format)",
@@ -177,7 +182,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "market-data",
     category: "data",
     description: "Spot prices and L2 orderbook snapshots for major tokens",
-    gateUrl: process.env.MARKET_DATA_GATE_URL || "http://localhost:4004",
+    gateUrl: process.env.MARKET_DATA_GATE_URL || gate("market-data"),
     endpoints: {
       "GET /prices": "All token spot prices",
       "GET /price/:token": "Price for one token",
@@ -190,7 +195,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "polymarket-prices",
     category: "data",
     description: "Live odds from Polymarket prediction markets",
-    gateUrl: process.env.POLYMARKET_PRICES_GATE_URL || "http://localhost:4014",
+    gateUrl: process.env.POLYMARKET_PRICES_GATE_URL || gate("polymarket-prices"),
     endpoints: {
       "GET /markets": "All active markets with prices",
       "GET /markets/:slug": "One market by slug (e.g. 'will-btc-hit-100k-by-2026')",
@@ -201,7 +206,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "weather-api",
     category: "data",
     description: "Current conditions for major cities (demo / utility example)",
-    gateUrl: process.env.WEATHER_GATE_URL || "http://localhost:4000",
+    gateUrl: process.env.WEATHER_GATE_URL || gate("weather-api"),
     endpoints: {
       "GET /weather/:city": "Current conditions",
       "GET /cities": "List supported cities (free)",
@@ -214,7 +219,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "ai-inference",
     category: "ai",
     description: "Pay-per-call inference: sentiment classification, summarization, topic tagging",
-    gateUrl: process.env.AI_INFERENCE_GATE_URL || "http://localhost:4003",
+    gateUrl: process.env.AI_INFERENCE_GATE_URL || gate("ai-inference"),
     endpoints: {
       "POST /sentiment": "{ text } → sentiment score + label",
       "POST /summarize": "{ text } → short summary",
@@ -226,7 +231,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "content-paywall",
     category: "content",
     description: "Premium long-form articles, preview free, full read paid",
-    gateUrl: process.env.CONTENT_PAYWALL_GATE_URL || "http://localhost:4005",
+    gateUrl: process.env.CONTENT_PAYWALL_GATE_URL || gate("content-paywall"),
     endpoints: {
       "GET /articles": "List article previews (free)",
       "GET /articles/:id/preview": "Preview only (free)",
@@ -238,7 +243,7 @@ const KNOWN_APIS: ApiInfo[] = [
     name: "web-scraper",
     category: "data",
     description: "On-demand structured scrape across 5 categories (news, ecommerce, classifieds, jobs, real estate)",
-    gateUrl: process.env.WEB_SCRAPER_GATE_URL || "http://localhost:4002",
+    gateUrl: process.env.WEB_SCRAPER_GATE_URL || gate("web-scraper"),
     endpoints: {
       "GET /scrape/:category": "Scrape results for one category",
       "GET /categories": "List supported categories (free)",
@@ -460,7 +465,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   ],
 }));
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
   const { name, arguments: args } = request.params;
   const a = (args ?? {}) as Record<string, unknown>;
 

@@ -1,15 +1,41 @@
 {
-  "name": "@chest/mcp",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@chest-gate/mcp",
+  "version": "0.2.0",
+  "description": "MCP server exposing Chest x402-gated APIs as tools. Earn referrer commission on every paid call from any MCP-capable agent (Claude Desktop, Cursor, etc).",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "x402",
+    "solana",
+    "agent",
+    "claude",
+    "chest-gate"
+  ],
+  "homepage": "https://chest.sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smd00/chest-gate.git",
+    "directory": "packages/mcp"
+  },
+  "license": "MIT",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "chest-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@noble/curves": "^1.0.0",
@@ -19,6 +45,7 @@
     "@x402/svm": "^2.9.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   }
