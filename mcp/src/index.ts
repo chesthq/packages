@@ -322,7 +322,7 @@ async function callGatedApi(
 // ─── MCP Server ──────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "chest", version: "0.2.0" },
+  { name: "chest", version: "0.2.1" },
   { capabilities: { tools: {} } }
 );
 

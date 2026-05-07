@@ -1,6 +1,6 @@
 {
   "name": "@chest-gate/mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MCP server exposing Chest x402-gated APIs as tools. Earn referrer commission on every paid call from any MCP-capable agent (Claude Desktop, Cursor, etc).",
   "keywords": [
     "mcp",
