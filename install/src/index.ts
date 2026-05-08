@@ -25,7 +25,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.2";
 const DEFAULT_API = "https://gate.chest.sh";
 const KEYS_URL = "https://chest.sh/app/keys";
 const AUTH_FILE = join(homedir(), ".chest", "auth.json");
