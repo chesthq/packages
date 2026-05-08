@@ -12,18 +12,23 @@
 
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline/promises";
 
 const VERSION = "0.1.0";
 const DEFAULT_API = "https://gate.chest.sh";
+const KEYS_URL = "https://chest.sh/app/keys";
+const AUTH_FILE = join(homedir(), ".chest", "auth.json");
 
 type AppKind = "skill" | "plugin" | "mcp";
 
@@ -86,6 +91,73 @@ function targetDir(kind: AppKind, name: string): string {
     process.exit(2);
   }
   return join(root, name);
+}
+
+interface AuthFile {
+  token: string;
+  apiUrl: string;
+}
+
+function parseAuthInput(raw: string): AuthFile | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("ca_live_")) {
+    return { token: trimmed, apiUrl: "https://chest.sh" };
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as { token?: unknown; apiUrl?: unknown };
+    if (typeof parsed.token === "string" && parsed.token.startsWith("ca_live_")) {
+      const apiUrl = typeof parsed.apiUrl === "string" ? parsed.apiUrl : "https://chest.sh";
+      return { token: parsed.token, apiUrl };
+    }
+  } catch {
+    // not JSON
+  }
+  return null;
+}
+
+async function promptForAuth(): Promise<void> {
+  const envKey = process.env.CHEST_API_KEY;
+  if (envKey && envKey.startsWith("ca_live_")) {
+    console.log(`  auth:    using CHEST_API_KEY from env`);
+    return;
+  }
+  if (existsSync(AUTH_FILE)) {
+    console.log(`  auth:    ${AUTH_FILE} already exists — leaving it alone`);
+    return;
+  }
+  if (!process.stdin.isTTY) {
+    console.log(`  auth:    skipped (non-interactive). Mint at ${KEYS_URL} and save to ${AUTH_FILE}`);
+    return;
+  }
+
+  console.log(`\n  Mint a key at ${KEYS_URL}`);
+  console.log(`  Paste the ca_live_ key or the full JSON below (Enter to skip).`);
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let answer: string;
+  try {
+    answer = await rl.question("  > ");
+  } finally {
+    rl.close();
+  }
+
+  if (!answer.trim()) {
+    console.log(`  auth:    skipped — set up later by saving the key to ${AUTH_FILE}`);
+    return;
+  }
+
+  const auth = parseAuthInput(answer);
+  if (!auth) {
+    console.log(`  auth:    couldn't find a ca_live_ token in that input — skipped.`);
+    console.log(`           Save it manually to ${AUTH_FILE}`);
+    return;
+  }
+
+  mkdirSync(join(homedir(), ".chest"), { recursive: true });
+  writeFileSync(AUTH_FILE, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(AUTH_FILE, 0o600);
+  console.log(`  auth:    saved → ${AUTH_FILE}`);
 }
 
 async function fetchManifest(slug: string): Promise<AppManifest> {
@@ -188,6 +260,9 @@ async function main() {
     }
 
     console.log(`\n  ✓ installed ${app.name} → ${target}`);
+
+    await promptForAuth();
+
     if (app.install.prompt) {
       console.log(`\n  next:    ${app.install.prompt}\n`);
     } else {
