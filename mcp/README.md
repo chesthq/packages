@@ -58,8 +58,7 @@ When set:
 |---|---|
 | `discover_apis` | List every Chest-gated API (or just one in single-gate mode) with pricing, endpoints, category, and on-chain metadata (`network`, `referrerBps`, `protocolBps`, `splitConfigPda`, `allowUnsignedReferrers`, `verified`). Filter by category (`trading`, `ai`, `data`, `content`, `utility`). |
 | `get_api_info` | Detail for one API including the discovery doc fetched live from the gate. |
-| `call_api` | Make a GET/POST against a registered API. Pays via x402 on Solana automatically and attaches referrer attribution (Bearer key or ed25519 signature). |
-| `analyze_token` | Convenience wrapper: parallel sentiment + technicals + liquidations for a token (~$0.011). Pass `deep: true` for funding rates, IV, and unlocks. *Hidden when `CHEST_SLUG` is set.* |
+| `call_api` | Make a GET/POST against a registered API. Pays via x402 on Solana automatically and attaches referrer attribution (Bearer key or ed25519 signature). Composable — your agent decides which gates to call. |
 | `list_apps` | Browse installable Chest apps — skills, plugins, and MCP servers — that wrap one or more gates. Filter by `kind` and `verified`; page with `limit` / `offset`. |
 | `get_app` | Full detail for one app, including its README and install snippets (`claudeCode`, `codex`, `cursor`, `mcpConfig`, `prompt`). |
 
