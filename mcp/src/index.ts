@@ -61,12 +61,12 @@ const CHEST_GATE_BASE_URL = process.env.CHEST_GATE_BASE_URL || "https://gate.che
 
 const gate = (slug: string) => `${CHEST_GATE_BASE_URL}/g/${slug}`;
 
-// ─── API Registry ────────────────────────────────────────────────────────────
+// ─── Gate catalog ────────────────────────────────────────────────────────────
 //
-// Loaded dynamically from the live Chest registry at startup and refreshed on
+// Loaded dynamically from the public gates listing at startup and refreshed on
 // a TTL. The package no longer ships a hardcoded list, so newly published
 // gates appear without a release. A small fallback list (FALLBACK_APIS) keeps
-// the server functional when /api/registry is unreachable (offline dev,
+// the server functional when /api/gates is unreachable (offline dev,
 // outage). Per-API gate URLs remain overrideable via {SLUG}_GATE_URL env vars.
 
 type Category = "trading" | "ai" | "data" | "content" | "utility";
@@ -97,7 +97,7 @@ function gateUrlFor(slug: string): string {
   return process.env[gateUrlEnvKey(slug)] ?? gate(slug);
 }
 
-interface RegistryDeployment {
+interface GateDeployment {
   slug: string;
   name?: string | null;
   description?: string | null;
@@ -114,7 +114,7 @@ interface BazaarEndpoint {
 
 /**
  * Best-effort fetch of a gate's discovery doc to recover the per-endpoint
- * path table (which the registry summary doesn't include). Returns an empty
+ * path table (which the gates summary doesn't include). Returns an empty
  * map on any failure, the API still works without it, agents just lose
  * endpoint hints in `discover_apis`.
  */
@@ -136,8 +136,8 @@ async function fetchGateEndpoints(gateUrl: string): Promise<Record<string, strin
 }
 
 /**
- * Tiny offline fallback. Used only when /api/registry is unreachable AND we
- * have no cached registry yet. Keep this short, the live registry is the
+ * Tiny offline fallback. Used only when /api/gates is unreachable AND we
+ * have no cached catalog yet. Keep this short, the live gates listing is the
  * source of truth, this just unblocks first-call dev with no network.
  */
 const FALLBACK_APIS: ApiInfo[] = [
@@ -156,21 +156,21 @@ const FALLBACK_APIS: ApiInfo[] = [
   },
 ];
 
-const REGISTRY_TTL_MS = 10 * 60_000;
-let cachedRegistry: ApiInfo[] | null = null;
+const GATES_TTL_MS = 10 * 60_000;
+let cachedGates: ApiInfo[] | null = null;
 let cachedAt = 0;
 let inflight: Promise<ApiInfo[]> | null = null;
 
-async function loadRegistry(): Promise<ApiInfo[]> {
+async function loadGates(): Promise<ApiInfo[]> {
   const now = Date.now();
-  if (cachedRegistry && now - cachedAt < REGISTRY_TTL_MS) return cachedRegistry;
+  if (cachedGates && now - cachedAt < GATES_TTL_MS) return cachedGates;
   if (inflight) return inflight;
 
   inflight = (async () => {
     try {
-      const r = await fetch(`${CHEST_GATE_BASE_URL}/api/registry`);
+      const r = await fetch(`${CHEST_GATE_BASE_URL}/api/gates`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const body = await r.json() as { deployments?: RegistryDeployment[] };
+      const body = await r.json() as { deployments?: GateDeployment[] };
       const deployments = body.deployments ?? [];
 
       const apis = await Promise.all(
@@ -188,15 +188,15 @@ async function loadRegistry(): Promise<ApiInfo[]> {
         }),
       );
 
-      cachedRegistry = apis;
+      cachedGates = apis;
       cachedAt = Date.now();
       return apis;
     } catch (err) {
       console.error(
-        `[chest-mcp] registry fetch failed: ${(err as Error).message}, ` +
-        `${cachedRegistry ? "using stale cache" : "using fallback"}`,
+        `[chest-mcp] gates fetch failed: ${(err as Error).message}, ` +
+        `${cachedGates ? "using stale cache" : "using fallback"}`,
       );
-      return cachedRegistry ?? FALLBACK_APIS;
+      return cachedGates ?? FALLBACK_APIS;
     } finally {
       inflight = null;
     }
@@ -206,7 +206,7 @@ async function loadRegistry(): Promise<ApiInfo[]> {
 }
 
 async function findApi(name: string): Promise<ApiInfo | undefined> {
-  const apis = await loadRegistry();
+  const apis = await loadGates();
   return apis.find((a) => a.name === name);
 }
 
@@ -322,19 +322,19 @@ async function callGatedApi(
 // ─── MCP Server ──────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "chest", version: "0.2.1" },
+  { name: "chest", version: "0.3.0" },
   { capabilities: { tools: {} } }
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  const apis = await loadRegistry();
+  const apis = await loadGates();
   const apiNames = apis.map((a) => a.name);
   return { tools: [
     {
       name: "discover_apis",
       description:
         "List every Chest-gated API with pricing, endpoints, category, and supported parameters. " +
-        "Call this first to explore what's available, the registry covers trading data, AI inference, " +
+        "Call this first to explore what's available, the catalog covers trading data, AI inference, " +
         "market data, content, and utility APIs. Use the returned `name` as the `api` argument to call_api.",
       inputSchema: {
         type: "object",
@@ -426,7 +426,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
   try {
     switch (name) {
       case "discover_apis": {
-        const apis = await loadRegistry();
+        const apis = await loadGates();
         const cat = a.category as string | undefined;
         const filtered = cat ? apis.filter((x) => x.category === cat) : apis;
         return {
@@ -437,7 +437,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       case "get_api_info": {
         const api = await findApi(a.api as string);
         if (!api) {
-          const apis = await loadRegistry();
+          const apis = await loadGates();
           return {
             content: [
               { type: "text", text: `Unknown API '${a.api}'. Available: ${apis.map((x) => x.name).join(", ")}` },
@@ -452,7 +452,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
           const r = await fetch(`${api.gateUrl}/.well-known/chest.json`);
           if (r.ok) discovery = await r.json();
         } catch {
-          // Gate may not be running, return registry info only.
+          // Gate may not be running, return catalog info only.
         }
         return {
           content: [{ type: "text", text: JSON.stringify({ ...api, discovery }, null, 2) }],
@@ -535,7 +535,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 /** Helper for analyze_token, looks up an API and calls one of its endpoints. */
 async function callForToken(apiName: string, path: string): Promise<any> {
   const api = await findApi(apiName);
-  if (!api) throw new Error(`API ${apiName} not in registry`);
+  if (!api) throw new Error(`API ${apiName} not in gate catalog`);
   return callGatedApi(api.gateUrl, path, api.name);
 }
 
@@ -554,10 +554,10 @@ if (!AGENT_PRIVATE_KEY_RAW) {
   console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
 }
 
-// Warm the registry so the first ListTools call doesn't pay the fan-out
-// latency. Failures are non-fatal: loadRegistry returns the fallback.
-const initialRegistry = await loadRegistry();
-const source = cachedRegistry === initialRegistry ? "live registry" : "fallback";
+// Warm the gate catalog so the first ListTools call doesn't pay the fan-out
+// latency. Failures are non-fatal: loadGates returns the fallback.
+const initialGates = await loadGates();
+const source = cachedGates === initialGates ? "live gates" : "fallback";
 console.error(
-  `[chest-mcp] Ready, ${initialRegistry.length} APIs registered (${source}: ${CHEST_GATE_BASE_URL})`,
+  `[chest-mcp] Ready, ${initialGates.length} APIs registered (${source}: ${CHEST_GATE_BASE_URL})`,
 );
