@@ -25,15 +25,15 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      # Trusted Publisher (OIDC) requires npm 11.5.1+. Node 20 ships with an
+      # Trusted Publisher (OIDC) requires npm 11.5.1+. Node 22 ships an
       # older npm; upgrade before any publish work.
       - name: Upgrade npm for OIDC publishing
         run: npm install -g npm@latest
