@@ -15,7 +15,6 @@
  *   - discover_apis      → list every known gate (pricing, endpoints, category)
  *   - get_api_info       → details for one gate (incl. on-chain split metadata)
  *   - call_api           → make any GET/POST against any registered gate
- *   - analyze_token      → convenience: parallel call to the trading data APIs
  *   - list_apps          → list installable apps (skill | plugin | mcp) wrapping gates
  *   - get_app            → full app detail incl. install snippets
  *
@@ -90,8 +89,8 @@ const CHEST_GATE_BASE_URL = process.env.CHEST_GATE_BASE_URL || "https://gate.che
 /**
  * Optional single-gate scope. When set, the MCP exposes only this slug:
  * discover_apis returns one entry, call_api defaults `api` to this slug
- * (and rejects any other), and analyze_token is hidden from tools/list.
- * Matches the chest-gate dashboard's per-gate install snippet.
+ * (and rejects any other). Matches the chest-gate dashboard's per-gate
+ * install snippet.
  */
 const CHEST_SLUG = process.env.CHEST_SLUG || "";
 
@@ -145,11 +144,11 @@ class UpstreamError extends Error {
 
 // ─── Gate catalog ────────────────────────────────────────────────────────────
 //
-// Loaded dynamically from the public gates listing at startup and refreshed on
-// a TTL. The package no longer ships a hardcoded list, so newly published
-// gates appear without a release. A small fallback list (FALLBACK_APIS) keeps
-// the server functional when /api/gates is unreachable (offline dev,
-// outage). Per-API gate URLs remain overrideable via {SLUG}_GATE_URL env vars.
+// Loaded dynamically from the public gates listing at startup and refreshed
+// on a TTL. The package ships zero hardcoded slugs; on /api/gates failure we
+// return an empty catalog (multi-gate mode) or a single CHEST_SLUG-derived
+// stub (single-gate mode). Per-API gate URLs remain overrideable via
+// {SLUG}_GATE_URL env vars.
 
 type Category = "trading" | "ai" | "data" | "content" | "utility";
 
@@ -253,27 +252,6 @@ async function fetchGateEndpoints(gateUrl: string): Promise<Record<string, strin
   }
 }
 
-/**
- * Tiny offline fallback. Used only when /api/gates is unreachable AND we
- * have no cached catalog yet. Keep this short, the live gates listing is the
- * source of truth, this just unblocks first-call dev with no network.
- */
-const FALLBACK_APIS: ApiInfo[] = [
-  {
-    name: "market-data",
-    category: "data",
-    description: "Spot prices and L2 orderbook snapshots for major tokens",
-    gateUrl: gateUrlFor("market-data"),
-    endpoints: {
-      "GET /prices": "All token spot prices",
-      "GET /price/:token": "Price for one token",
-      "GET /orderbook/:token": "L2 bid/ask snapshot",
-      "GET /tokens": "List supported tokens (free)",
-    },
-    price: "$0.001",
-  },
-];
-
 const GATES_TTL_MS = 10 * 60_000;
 let cachedGates: ApiInfo[] | null = null;
 let cachedAt = 0;
@@ -332,12 +310,14 @@ async function loadGates(): Promise<ApiInfo[]> {
     } catch (err) {
       console.error(
         `[chest-mcp] gates fetch failed: ${(err as Error).message}, ` +
-        `${cachedGates ? "using stale cache" : "using fallback"}`,
+        `${cachedGates ? "using stale cache" : (CHEST_SLUG ? "using single-gate stub" : "returning empty catalog")}`,
       );
       if (cachedGates) return cachedGates;
-      // Single-gate fallback: synthesize the configured slug. Otherwise
-      // return the tiny built-in FALLBACK_APIS list.
-      return CHEST_SLUG ? [stubApiInfo(CHEST_SLUG)] : FALLBACK_APIS;
+      // Single-gate fallback: synthesize the configured slug so call_api
+      // still works against the deterministic gate URL. Multi-gate mode
+      // returns an empty list — the package no longer ships any hardcoded
+      // slugs.
+      return CHEST_SLUG ? [stubApiInfo(CHEST_SLUG)] : [];
     } finally {
       inflight = null;
     }
@@ -529,8 +509,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   const singleGate = !!CHEST_SLUG;
 
   // In single-gate mode, the `api` argument is optional and defaults to the
-  // configured slug. analyze_token fans out to specific slugs that aren't
-  // in scope, so it's hidden.
+  // configured slug.
   const apiArg = singleGate
     ? {
         type: "string",
@@ -616,30 +595,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     },
   ];
 
-  if (!singleGate) {
-    tools.push({
-      name: "analyze_token",
-      description:
-        "Comprehensive token analysis, calls sentiment, technicals, and liquidations APIs in parallel and returns the combined picture. " +
-        "Total cost: ~$0.011 (3 paid calls). Use this when you need a full market view in one shot. " +
-        "For deeper analysis (funding, IV, unlocks), pass `deep: true`, adds ~$0.009 and 3 more APIs.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          token: {
-            type: "string",
-            description: "Token symbol (e.g. SOL, BTC, ETH)",
-          },
-          deep: {
-            type: "boolean",
-            description: "If true, also fetch funding rate, implied volatility, and token unlocks (BTC/ETH have IV).",
-          },
-        },
-        required: ["token"],
-      },
-    });
-  }
-
   // Apps catalog — agent-installable artifacts (skill | plugin | mcp) that
   // wrap one or more gates. Available in both modes; even a single-gate
   // server might want to surface skills/MCPs/plugins built around its gate.
@@ -705,10 +660,6 @@ const CallApiSchema = z.object({
   body: z.unknown().optional(),
   idempotencyKey: z.string().min(1).optional(),
   dryRun: z.boolean().optional(),
-});
-const AnalyzeTokenSchema = z.object({
-  token: z.string().min(1),
-  deep: z.boolean().optional(),
 });
 const ListAppsSchema = z.object({
   kind: z.enum(["skill", "plugin", "mcp"]).optional(),
@@ -806,51 +757,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       }
 
-      case "analyze_token": {
-        if (CHEST_SLUG) {
-          return {
-            content: [{ type: "text", text: `analyze_token is unavailable in single-gate mode (CHEST_SLUG='${CHEST_SLUG}'). Use call_api instead.` }],
-            isError: true,
-          };
-        }
-        const parsed = AnalyzeTokenSchema.safeParse(a);
-        if (!parsed.success) return zodErrorReply(name, parsed.error);
-        const token = parsed.data.token.toUpperCase();
-        const deep = parsed.data.deep === true;
-
-        // Always fetch the core 3.
-        const coreCalls: Array<{ slug: string; promise: Promise<any> }> = [
-          { slug: "sentiment-api", promise: callForToken("sentiment-api", `/sentiment/${token}`) },
-          { slug: "technicals-api", promise: callForToken("technicals-api", `/technicals/${token}`) },
-          { slug: "liquidations-api", promise: callForToken("liquidations-api", `/liquidations/${token}`) },
-        ];
-
-        // Deep adds funding, IV (only for BTC/ETH), and any matching upcoming unlocks.
-        if (deep) {
-          coreCalls.push({ slug: "funding-rates", promise: callForToken("funding-rates", `/funding/${token}`) });
-          if (token === "BTC" || token === "ETH") {
-            coreCalls.push({ slug: "implied-volatility", promise: callForToken("implied-volatility", `/iv/${token}`) });
-          }
-          coreCalls.push({ slug: "token-unlocks", promise: callForToken("token-unlocks", `/unlocks/${token}`) });
-        }
-
-        const results = await Promise.allSettled(coreCalls.map((c) => c.promise));
-        const out: Record<string, unknown> = {
-          token,
-          deep,
-          referrer: REFERRER_WALLET || null,
-          timestamp: new Date().toISOString(),
-        };
-        results.forEach((r, i) => {
-          const key = coreCalls[i].slug.replace(/-api$/, "");
-          out[key] = r.status === "fulfilled"
-            ? r.value
-            : { error: (r as PromiseRejectedResult).reason?.message };
-        });
-
-        return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] };
-      }
-
       case "list_apps": {
         const parsed = ListAppsSchema.safeParse(a);
         if (!parsed.success) return zodErrorReply(name, parsed.error);
@@ -919,13 +825,6 @@ function tryParseJson(text: string): unknown {
   try { return JSON.parse(text); } catch { return text; }
 }
 
-/** Helper for analyze_token, looks up an API and calls one of its endpoints. */
-async function callForToken(apiName: string, path: string): Promise<any> {
-  const api = await findApi(apiName);
-  if (!api) throw new Error(`API ${apiName} not in gate catalog`);
-  return callGatedApi(api.gateUrl, path, api.name);
-}
-
 /**
  * Resolve the slug for a tool call against `CHEST_SLUG` precedence:
  *   - single-gate mode: arg is optional; if provided, must match `CHEST_SLUG`
@@ -955,7 +854,7 @@ await server.connect(transport);
 
 // Log to stderr (stdout is reserved for MCP protocol).
 if (CHEST_SLUG) {
-  console.error(`[chest-mcp] Single-gate mode: locked to '${CHEST_SLUG}' (analyze_token disabled)`);
+  console.error(`[chest-mcp] Single-gate mode: locked to '${CHEST_SLUG}'`);
 }
 if (CHEST_AGENT_TOKEN) {
   const prefix = CHEST_AGENT_TOKEN.slice(0, 12);
