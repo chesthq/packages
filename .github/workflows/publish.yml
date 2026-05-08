@@ -33,6 +33,11 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
+      # Trusted Publisher (OIDC) requires npm 11.5.1+. Node 20 ships with an
+      # older npm; upgrade before any publish work.
+      - name: Upgrade npm for OIDC publishing
+        run: npm install -g npm@latest
+
       - name: Parse tag
         id: parse
         run: |
@@ -60,7 +65,9 @@ jobs:
       - name: Build
         run: npm run build --workspace=${{ steps.parse.outputs.folder }}
 
+      # Auth handled by npm Trusted Publisher (OIDC). The id-token: write
+      # permission above lets the npm CLI exchange the GitHub-issued OIDC
+      # token for a short-lived registry token. No secret env var here —
+      # an empty NODE_AUTH_TOKEN would break OIDC fallback.
       - name: Publish
         run: npm publish --workspace=${{ steps.parse.outputs.folder }} --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
