@@ -42,28 +42,35 @@ interface AppManifest {
   install: Record<string, string | undefined>;
 }
 
+const HELP_TEXT = [
+  `chest-install ${VERSION}`,
+  "",
+  "Usage:",
+  "  npx @chest-gate/install <slug> [flags]",
+  "",
+  "Flags:",
+  "  -h, --help  show this help and exit",
+  "  --force     remove an existing target before installing (destructive)",
+  "  --upgrade   rename an existing target to <name>.bak-<timestamp> first",
+  "",
+  "Examples:",
+  "  npx @chest-gate/install trading-bot",
+  "  npx @chest-gate/install trading-bot --upgrade",
+  "  npx @chest-gate/install trading-bot --force",
+  "",
+  "Env:",
+  "  CHEST_API      override registry (default: https://gate.chest.sh)",
+  "  CHEST_HOME     override install root (default: ~/.claude/skills)",
+  "  CHEST_API_KEY  ca_live_ token (skips interactive auth prompt)",
+].join("\n");
+
+function printHelp(): never {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
+
 function usage(): never {
-  console.error(
-    [
-      `chest-install ${VERSION}`,
-      "",
-      "Usage:",
-      "  npx @chest-gate/install <slug> [flags]",
-      "",
-      "Flags:",
-      "  --force     remove an existing target before installing (destructive)",
-      "  --upgrade   rename an existing target to <name>.bak-<timestamp> first",
-      "",
-      "Examples:",
-      "  npx @chest-gate/install trading-bot",
-      "  npx @chest-gate/install trading-bot --upgrade",
-      "  npx @chest-gate/install trading-bot --force",
-      "",
-      "Env:",
-      "  CHEST_API   override registry (default: https://gate.chest.sh)",
-      "  CHEST_HOME  override install root (default: ~/.claude/skills)",
-    ].join("\n"),
-  );
+  console.error(HELP_TEXT);
   process.exit(1);
 }
 
@@ -76,7 +83,8 @@ function parseFlags(argv: string[]): { positional: string[]; flags: CliFlags } {
   const positional: string[] = [];
   const flags: CliFlags = { force: false, upgrade: false };
   for (const a of argv) {
-    if (a === "--force") flags.force = true;
+    if (a === "-h" || a === "--help") printHelp();
+    else if (a === "--force") flags.force = true;
     else if (a === "--upgrade") flags.upgrade = true;
     else if (a.startsWith("-")) {
       console.error(`Unknown flag: ${a}`);
