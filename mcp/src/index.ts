@@ -69,6 +69,14 @@ const AGENT_PRIVATE_KEY_RAW = process.env.AGENT_WALLET_PRIVATE_KEY || "";
 /** Base URL of the Chest gate. Per-API URLs default to {BASE}/g/{slug}. */
 const CHEST_GATE_BASE_URL = process.env.CHEST_GATE_BASE_URL || "https://gate.chest.sh";
 
+/**
+ * Optional single-gate scope. When set, the MCP exposes only this slug:
+ * discover_apis returns one entry, call_api defaults `api` to this slug
+ * (and rejects any other), and analyze_token is hidden from tools/list.
+ * Matches the chest-gate dashboard's per-gate install snippet.
+ */
+const CHEST_SLUG = process.env.CHEST_SLUG || "";
+
 const gate = (slug: string) => `${CHEST_GATE_BASE_URL}/g/${slug}`;
 
 // ─── Gate catalog ────────────────────────────────────────────────────────────
@@ -92,6 +100,22 @@ interface ApiInfo {
   endpoints: Record<string, string>;
   /** Per-call price in USD (display only, actual price comes from the 402 challenge). */
   price: string;
+  /** Solana network the gate settles on, e.g. "solana-mainnet" or "solana-devnet". */
+  network?: string | null;
+  /** Curated/verified flag from the chest-gate registry. */
+  verified?: boolean;
+  /** Editorial blurb if the gate is curated. */
+  editorial?: string | null;
+  /** Referrer commission rate in basis points (10000 = 100%). */
+  referrerBps?: number | null;
+  /** Protocol fee in basis points. */
+  protocolBps?: number | null;
+  /** On-chain split-config PDA. */
+  splitConfigPda?: string | null;
+  /** When true, X-Referrer-Wallet alone (no signature) is accepted by this gate. */
+  allowUnsignedReferrers?: boolean;
+  /** Number of endpoints the gate publishes. */
+  endpointCount?: number;
 }
 
 function isCategory(s: unknown): s is Category {
@@ -107,6 +131,18 @@ function gateUrlFor(slug: string): string {
   return process.env[gateUrlEnvKey(slug)] ?? gate(slug);
 }
 
+/** Minimal ApiInfo for an unknown slug (single-gate mode + offline / not-yet-listed). */
+function stubApiInfo(slug: string): ApiInfo {
+  return {
+    name: slug,
+    category: "data",
+    description: slug,
+    gateUrl: gateUrlFor(slug),
+    endpoints: {},
+    price: "",
+  };
+}
+
 interface GateDeployment {
   slug: string;
   name?: string | null;
@@ -114,6 +150,14 @@ interface GateDeployment {
   category?: string | null;
   price?: string | number | null;
   routePrices?: Record<string, string> | null;
+  network?: string | null;
+  verified?: boolean;
+  editorial?: string | null;
+  referrerBps?: number | null;
+  protocolBps?: number | null;
+  splitConfigPda?: string | null;
+  allowUnsignedReferrers?: boolean;
+  endpointCount?: number;
 }
 
 interface BazaarEndpoint {
@@ -181,7 +225,13 @@ async function loadGates(): Promise<ApiInfo[]> {
       const r = await fetch(`${CHEST_GATE_BASE_URL}/api/gates`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const body = await r.json() as { deployments?: GateDeployment[] };
-      const deployments = body.deployments ?? [];
+      let deployments = body.deployments ?? [];
+
+      // Single-gate mode: keep only the configured slug. Endpoint discovery
+      // for the rest is wasted work.
+      if (CHEST_SLUG) {
+        deployments = deployments.filter((d) => d.slug === CHEST_SLUG);
+      }
 
       const apis = await Promise.all(
         deployments.map(async (d): Promise<ApiInfo> => {
@@ -194,9 +244,23 @@ async function loadGates(): Promise<ApiInfo[]> {
             gateUrl,
             endpoints,
             price: d.price != null ? `$${d.price}` : "",
+            network: d.network ?? null,
+            verified: d.verified ?? false,
+            editorial: d.editorial ?? null,
+            referrerBps: d.referrerBps ?? null,
+            protocolBps: d.protocolBps ?? null,
+            splitConfigPda: d.splitConfigPda ?? null,
+            allowUnsignedReferrers: d.allowUnsignedReferrers ?? false,
+            endpointCount: d.endpointCount ?? 0,
           };
         }),
       );
+
+      // Single-gate mode + slug missing from live catalog → synthesize a
+      // minimal entry so call_api still works (the gate URL is deterministic).
+      if (CHEST_SLUG && apis.length === 0) {
+        apis.push(stubApiInfo(CHEST_SLUG));
+      }
 
       cachedGates = apis;
       cachedAt = Date.now();
@@ -206,7 +270,10 @@ async function loadGates(): Promise<ApiInfo[]> {
         `[chest-mcp] gates fetch failed: ${(err as Error).message}, ` +
         `${cachedGates ? "using stale cache" : "using fallback"}`,
       );
-      return cachedGates ?? FALLBACK_APIS;
+      if (cachedGates) return cachedGates;
+      // Single-gate fallback: synthesize the configured slug. Otherwise
+      // return the tiny built-in FALLBACK_APIS list.
+      return CHEST_SLUG ? [stubApiInfo(CHEST_SLUG)] : FALLBACK_APIS;
     } finally {
       inflight = null;
     }
@@ -342,20 +409,39 @@ async function callGatedApi(
 // ─── MCP Server ──────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "chest", version: "0.4.0" },
+  { name: "chest", version: "0.5.0" },
   { capabilities: { tools: {} } }
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   const apis = await loadGates();
   const apiNames = apis.map((a) => a.name);
-  return { tools: [
+  const singleGate = !!CHEST_SLUG;
+
+  // In single-gate mode, the `api` argument is optional and defaults to the
+  // configured slug. analyze_token fans out to specific slugs that aren't
+  // in scope, so it's hidden.
+  const apiArg = singleGate
+    ? {
+        type: "string",
+        const: CHEST_SLUG,
+        description: `API name. Locked to '${CHEST_SLUG}' in single-gate mode (CHEST_SLUG env). Optional.`,
+      }
+    : {
+        type: "string",
+        enum: apiNames,
+        description: `API name. One of: ${apiNames.join(", ")}`,
+      };
+
+  const tools: any[] = [
     {
       name: "discover_apis",
-      description:
-        "List every Chest-gated API with pricing, endpoints, category, and supported parameters. " +
-        "Call this first to explore what's available, the catalog covers trading data, AI inference, " +
-        "market data, content, and utility APIs. Use the returned `name` as the `api` argument to call_api.",
+      description: singleGate
+        ? `List the configured Chest gate ('${CHEST_SLUG}') with pricing, endpoints, and metadata. ` +
+          "Use the returned `name` as the `api` argument to call_api (or omit it; this MCP is locked to one gate)."
+        : "List every Chest-gated API with pricing, endpoints, category, and supported parameters. " +
+          "Call this first to explore what's available, the catalog covers trading data, AI inference, " +
+          "market data, content, and utility APIs. Use the returned `name` as the `api` argument to call_api.",
       inputSchema: {
         type: "object",
         properties: {
@@ -369,35 +455,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     {
       name: "get_api_info",
       description:
-        "Get detailed info about one API including its on-chain discovery metadata (referrer commission rate, " +
-        "vault address, split config). Useful before paying, agents can decide whether the commission rate is worth it.",
+        "Get detailed info about one API including its on-chain split metadata (network, referrerBps, protocolBps, " +
+        "splitConfigPda, allowUnsignedReferrers, verified). Useful before paying, agents can decide whether the " +
+        "commission rate is worth it.",
       inputSchema: {
         type: "object",
-        properties: {
-          api: {
-            type: "string",
-            enum: apiNames,
-            description: `API name. One of: ${apiNames.join(", ")}`,
-          },
-        },
-        required: ["api"],
+        properties: { api: apiArg },
+        required: singleGate ? [] : ["api"],
       },
     },
     {
       name: "call_api",
       description:
-        "Make a request to any Chest-gated API. Pays via x402 on Solana automatically (using your AGENT_WALLET_PRIVATE_KEY) " +
-        "and signs an X-Referrer-Sig header with REFERRER_WALLET so you earn commission on every call. " +
+        "Make a request to a Chest-gated API. Pays via x402 on Solana automatically (using your AGENT_WALLET_PRIVATE_KEY) " +
+        "and attaches referrer attribution (CHEST_API_KEY Bearer if set, else ed25519-signed REFERRER_WALLET). " +
         "For GET endpoints, only `path` is needed. For POST endpoints (e.g. ai-inference), pass `body` as a JSON object. " +
-        "Use discover_apis first to find available endpoints.",
+        (singleGate
+          ? `This MCP is locked to '${CHEST_SLUG}'; the \`api\` argument is optional.`
+          : "Use discover_apis first to find available endpoints."),
       inputSchema: {
         type: "object",
         properties: {
-          api: {
-            type: "string",
-            enum: apiNames,
-            description: `API name. One of: ${apiNames.join(", ")}`,
-          },
+          api: apiArg,
           path: {
             type: "string",
             description: "Endpoint path including any params (e.g. '/sentiment/SOL', '/funding/BTC', '/scrape/news')",
@@ -412,10 +491,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             description: "JSON body (POST only). E.g. { text: '...' } for ai-inference endpoints.",
           },
         },
-        required: ["api", "path"],
+        required: singleGate ? ["path"] : ["api", "path"],
       },
     },
-    {
+  ];
+
+  if (!singleGate) {
+    tools.push({
       name: "analyze_token",
       description:
         "Comprehensive token analysis, calls sentiment, technicals, and liquidations APIs in parallel and returns the combined picture. " +
@@ -435,8 +517,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
         required: ["token"],
       },
-    },
-  ] };
+    });
+  }
+
+  return { tools };
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
@@ -455,12 +539,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       }
 
       case "get_api_info": {
-        const api = await findApi(a.api as string);
+        const slug = resolveSlug(a.api);
+        if (slug instanceof Error) {
+          return { content: [{ type: "text", text: slug.message }], isError: true };
+        }
+        const api = await findApi(slug);
         if (!api) {
           const apis = await loadGates();
           return {
             content: [
-              { type: "text", text: `Unknown API '${a.api}'. Available: ${apis.map((x) => x.name).join(", ")}` },
+              { type: "text", text: `Unknown API '${slug}'. Available: ${apis.map((x) => x.name).join(", ")}` },
             ],
             isError: true,
           };
@@ -480,10 +568,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       }
 
       case "call_api": {
-        const api = await findApi(a.api as string);
+        const slug = resolveSlug(a.api);
+        if (slug instanceof Error) {
+          return { content: [{ type: "text", text: slug.message }], isError: true };
+        }
+        const api = await findApi(slug);
         if (!api) {
           return {
-            content: [{ type: "text", text: `Unknown API '${a.api}'` }],
+            content: [{ type: "text", text: `Unknown API '${slug}'` }],
             isError: true,
           };
         }
@@ -502,6 +594,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       }
 
       case "analyze_token": {
+        if (CHEST_SLUG) {
+          return {
+            content: [{ type: "text", text: `analyze_token is unavailable in single-gate mode (CHEST_SLUG='${CHEST_SLUG}'). Use call_api instead.` }],
+            isError: true,
+          };
+        }
         const token = (a.token as string).toUpperCase();
         const deep = !!a.deep;
 
@@ -559,12 +657,37 @@ async function callForToken(apiName: string, path: string): Promise<any> {
   return callGatedApi(api.gateUrl, path, api.name);
 }
 
+/**
+ * Resolve the slug for a tool call against `CHEST_SLUG` precedence:
+ *   - single-gate mode: arg is optional; if provided, must match `CHEST_SLUG`
+ *   - multi-gate mode: arg is required
+ * Returns the resolved slug, or an `Error` describing why the input was invalid.
+ */
+function resolveSlug(arg: unknown): string | Error {
+  if (CHEST_SLUG) {
+    if (arg !== undefined && arg !== null && arg !== CHEST_SLUG) {
+      return new Error(
+        `This MCP is locked to '${CHEST_SLUG}' (CHEST_SLUG env). Got '${String(arg)}'. ` +
+          `Either omit the \`api\` argument or unset CHEST_SLUG to use other gates.`,
+      );
+    }
+    return CHEST_SLUG;
+  }
+  if (typeof arg !== "string" || arg.length === 0) {
+    return new Error("Missing required `api` argument.");
+  }
+  return arg;
+}
+
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
 
 // Log to stderr (stdout is reserved for MCP protocol).
+if (CHEST_SLUG) {
+  console.error(`[chest-mcp] Single-gate mode: locked to '${CHEST_SLUG}' (analyze_token disabled)`);
+}
 if (CHEST_API_KEY) {
   const prefix = CHEST_API_KEY.slice(0, 12);
   console.error(`[chest-mcp] Referrer: API key ${prefix}… (earning commission per paid call)`);

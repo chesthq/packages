@@ -36,14 +36,30 @@ Mint a `CHEST_API_KEY` at [chest.sh/dashboard/keys](https://chest.sh/dashboard/k
 
 Restart Claude. The four tools below appear automatically.
 
+## Single-gate mode (`CHEST_SLUG`)
+
+Set `CHEST_SLUG` to lock the MCP to one gate — matches the per-gate install snippet on chest.sh:
+
+```json
+"env": {
+  "CHEST_API_KEY": "cg_live_...",
+  "CHEST_SLUG":    "sentiment-api"
+}
+```
+
+When set:
+- `discover_apis` returns only that one gate.
+- `call_api` defaults the `api` argument to `CHEST_SLUG`; passing a different slug errors.
+- `analyze_token` is hidden (it fans out to specific slugs not in scope).
+
 ## Tools
 
 | Tool | What it does |
 |---|---|
-| `discover_apis` | List every Chest-gated API with pricing, endpoints, category. Filter by category (`trading`, `ai`, `data`, `content`, `utility`). |
-| `get_api_info` | Detail for one API including on-chain split metadata (referrer rate, vault, splitter config). |
-| `call_api` | Make a GET/POST against any registered API. Pays via x402 on Solana automatically and attaches the referrer signature. |
-| `analyze_token` | Convenience wrapper: parallel sentiment + technicals + liquidations for a token (~$0.011). Pass `deep: true` for funding rates, IV, and unlocks. |
+| `discover_apis` | List every Chest-gated API (or just one in single-gate mode) with pricing, endpoints, category, and on-chain metadata (`network`, `referrerBps`, `protocolBps`, `splitConfigPda`, `allowUnsignedReferrers`, `verified`). Filter by category (`trading`, `ai`, `data`, `content`, `utility`). |
+| `get_api_info` | Detail for one API including the discovery doc fetched live from the gate. |
+| `call_api` | Make a GET/POST against a registered API. Pays via x402 on Solana automatically and attaches referrer attribution (Bearer key or ed25519 signature). |
+| `analyze_token` | Convenience wrapper: parallel sentiment + technicals + liquidations for a token (~$0.011). Pass `deep: true` for funding rates, IV, and unlocks. *Hidden when `CHEST_SLUG` is set.* |
 
 ## Environment
 
@@ -53,6 +69,7 @@ Two referrer-attribution modes. **Use `CHEST_API_KEY` unless you specifically wa
 |---|---|---|
 | `CHEST_API_KEY` | recommended | Bearer key (`cg_live_...` / `cg_test_...`) minted at [chest.sh/dashboard/keys](https://chest.sh/dashboard/keys). Carries referrer attribution; payout wallet was committed at key creation. When set, `REFERRER_WALLET` and `REFERRER_PAYOUT_WALLET` are ignored. |
 | `AGENT_WALLET_PRIVATE_KEY` | required for paid calls | Solana secret key paying x402 challenges. JSON array `[1,2,3,...]` or base64. Without it, only free endpoints work. |
+| `CHEST_SLUG` | optional | Lock the MCP to a single gate. See [Single-gate mode](#single-gate-mode-chest_slug). |
 | `CHEST_GATE_BASE_URL` | optional | Override the gate base. Defaults to `https://gate.chest.sh`. Each API resolves to `{base}/g/{slug}`. |
 | `{SLUG}_GATE_URL` | optional | Per-API URL override (e.g. `SENTIMENT_GATE_URL`). Useful for local dev against a self-hosted gate. |
 
