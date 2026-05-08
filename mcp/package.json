@@ -14,8 +14,8 @@
   "homepage": "https://chest.sh",
   "repository": {
     "type": "git",
-    "url": "https://github.com/smd00/chest-gate.git",
-    "directory": "packages/mcp"
+    "url": "https://github.com/chesthq/packages.git",
+    "directory": "mcp"
   },
   "license": "MIT",
   "type": "module",

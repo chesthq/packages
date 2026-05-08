@@ -7,8 +7,8 @@
   "homepage": "https://chest.sh",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/smd00/chest-gate.git",
-    "directory": "packages/upstream-proxy"
+    "url": "git+https://github.com/chesthq/packages.git",
+    "directory": "upstream-proxy"
   },
   "keywords": [
     "x402",
