@@ -65,23 +65,43 @@ When set:
 
 ## Environment
 
-Two referrer-attribution modes. **Use `CHEST_API_KEY` unless you specifically want self-custodial signing** — it's simpler, the payout wallet is bound at key-mint time on the dashboard, and rotation is one click.
+Three modes, picked by which env var is set first:
+
+1. **`CHEST_AGENT_TOKEN`** (`ca_live_...`) — hosted-wallet, no keypair on your machine. Server pays from a Privy wallet bound to the token.
+2. **`CHEST_API_KEY`** (`cg_live_...`) — bring-your-own keypair, server credits attribution. Lighter than self-custodial signing but you still hold the spending key.
+3. **`REFERRER_WALLET` + keypair** — fully self-custodial; ed25519-signed per call.
 
 | Var | Required | Purpose |
 |---|---|---|
-| `CHEST_API_KEY` | recommended | Bearer key (`cg_live_...` / `cg_test_...`) minted at [chest.sh/dashboard/keys](https://chest.sh/dashboard/keys). Carries referrer attribution; payout wallet was committed at key creation. When set, `REFERRER_WALLET` and `REFERRER_PAYOUT_WALLET` are ignored. |
-| `AGENT_WALLET_PRIVATE_KEY` | required for paid calls | Solana secret key paying x402 challenges. JSON array `[1,2,3,...]` or base64. Without it, only free endpoints work. |
+| `CHEST_AGENT_TOKEN` | for the hosted-wallet flow | `ca_live_...` token minted on the dashboard. When set, the MCP routes paid calls through `POST /api/agent/fetch`; `CHEST_API_KEY`, `REFERRER_WALLET`, and `AGENT_WALLET_PRIVATE_KEY` are ignored. |
+| `CHEST_API_KEY` | for the Bearer-key flow | Bearer key (`cg_live_...` / `cg_test_...`) minted at [chest.sh/dashboard/keys](https://chest.sh/dashboard/keys). Carries referrer attribution; payout wallet was committed at key creation. When set, `REFERRER_WALLET` and `REFERRER_PAYOUT_WALLET` are ignored. |
+| `AGENT_WALLET_PRIVATE_KEY` | required when not using `CHEST_AGENT_TOKEN` | Solana secret key paying x402 challenges. JSON array `[1,2,3,...]` or base64. |
 | `CHEST_SLUG` | optional | Lock the MCP to a single gate. See [Single-gate mode](#single-gate-mode-chest_slug). |
 | `CHEST_GATE_BASE_URL` | optional | Override the gate base. Defaults to `https://gate.chest.sh`. Each API resolves to `{base}/g/{slug}`. |
 | `{SLUG}_GATE_URL` | optional | Per-API URL override (e.g. `SENTIMENT_GATE_URL`). Useful for local dev against a self-hosted gate. |
 
+### Hosted-wallet mode (`CHEST_AGENT_TOKEN`)
+
+Simplest setup — no keypair, no `@x402/*` libraries cold-start cost. The dashboard mints a `ca_live_...` token bound to a Privy-managed wallet; every paid call goes through `POST /api/agent/fetch` and the server runs the entire 402 dance.
+
+```json
+"env": {
+  "CHEST_AGENT_TOKEN": "ca_live_...",
+  "CHEST_SLUG":        "sentiment-api"
+}
+```
+
+`call_api` accepts two extra args in this mode:
+- `idempotencyKey` — same key returns the cached settlement (server-enforced)
+- `dryRun` — validate and price-quote without charging
+
 ### Advanced: self-custodial referrer signing
 
-If you'd rather not trust a server-side key store, drop `CHEST_API_KEY` and use these instead. The MCP signs an ed25519 claim per call; the server's `chest_splitter` program verifies it on-chain.
+If you'd rather not trust a server-side key store, drop `CHEST_API_KEY`/`CHEST_AGENT_TOKEN` and use these instead. The MCP signs an ed25519 claim per call; the server's `chest_splitter` program verifies it on-chain.
 
 | Var | Required | Purpose |
 |---|---|---|
-| `REFERRER_WALLET` | when `CHEST_API_KEY` unset | Hot wallet pubkey that signs the referral claim. |
+| `REFERRER_WALLET` | when no `CHEST_*` token set | Hot wallet pubkey that signs the referral claim. |
 | `REFERRER_PAYOUT_WALLET` | optional | Cold wallet to receive the commission. Set this to separate signing risk from funds — a compromised hot key can't redirect commission. |
 
 `REFERRER_WALLET` only proves ownership — it signs a canonical message containing the API slug, payment amount, and a 60-second time window. `REFERRER_PAYOUT_WALLET` commits the signed claim to a different wallet for payout.

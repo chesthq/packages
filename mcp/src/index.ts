@@ -2,11 +2,14 @@
 /**
  * Chest MCP Server
  *
- * Exposes x402-gated APIs as MCP tools. Any AI agent using this server earns
- * commission on every paid call. Two attribution modes:
- *   1. CHEST_API_KEY (Bearer cg_live_…) — recommended, payout wallet bound
- *      at key-mint time on the dashboard.
- *   2. REFERRER_WALLET + ed25519 signing — self-custodial, signed per call.
+ * Exposes x402-gated APIs as MCP tools. Three call modes, in precedence
+ * order — first-set wins:
+ *   1. CHEST_AGENT_TOKEN (ca_live_…) — hosted-wallet via /api/agent/fetch.
+ *      Server holds the Privy wallet, MCP never touches a keypair.
+ *   2. CHEST_API_KEY (Bearer cg_live_…) — referrer attribution; client
+ *      pays via AGENT_WALLET_PRIVATE_KEY.
+ *   3. REFERRER_WALLET + ed25519 signing — self-custodial; client pays via
+ *      AGENT_WALLET_PRIVATE_KEY and signs each referral claim.
  *
  * Tool surface:
  *   - discover_apis      → list every known gate (pricing, endpoints, category)
@@ -43,6 +46,15 @@ import {
 import { signReferral } from "./referrer.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
+
+/**
+ * Hosted-wallet agent token (ca_live_…) minted on the dashboard. When set,
+ * call_api dispatches paid calls through POST /api/agent/fetch — the server
+ * holds a Privy-managed wallet and performs the entire x402 dance, so the
+ * MCP needs no Solana keypair. AGENT_WALLET_PRIVATE_KEY, REFERRER_WALLET,
+ * REFERRER_PAYOUT_WALLET, and CHEST_API_KEY are all ignored when set.
+ */
+const CHEST_AGENT_TOKEN = process.env.CHEST_AGENT_TOKEN || "";
 
 /**
  * Bearer-format referrer key (cg_live_… / cg_test_…) minted at chest.sh/dashboard/keys.
@@ -319,12 +331,52 @@ async function getPaymentClient() {
 }
 
 /**
- * Make a request to an x402-gated endpoint. Handles:
- *   - first try (might be free / freebie / session-cached)
- *   - 402 response → build payment payload
- *   - referrer attribution via either CHEST_API_KEY (Bearer) or ed25519
- *     signed REFERRER_WALLET headers
- *   - retry with x-payment + referrer headers
+ * Hosted-wallet path: dispatch the call through `POST /api/agent/fetch`.
+ * The chest-gate server holds the Privy wallet bound to CHEST_AGENT_TOKEN
+ * and runs the entire 402 dance, so we never sign locally. Returns the
+ * server's JSON response unchanged (incl. `success`, `response`, `paid`,
+ * `payment` metadata, `dryRun` if applicable).
+ */
+async function callViaAgentFetch(
+  url: string,
+  slug: string,
+  opts: { method?: string; body?: unknown; idempotencyKey?: string; dryRun?: boolean } = {},
+): Promise<any> {
+  const payload: Record<string, unknown> = {
+    url,
+    method: opts.method ?? "GET",
+    gateSlug: slug,
+  };
+  if (opts.body !== undefined) payload.body = opts.body;
+  if (opts.idempotencyKey) payload.idempotencyKey = opts.idempotencyKey;
+  if (opts.dryRun) payload.dryRun = true;
+
+  const r = await fetch(`${CHEST_GATE_BASE_URL}/api/agent/fetch`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${CHEST_AGENT_TOKEN}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await r.text();
+  let json: unknown = null;
+  try { json = JSON.parse(text); } catch { /* non-JSON */ }
+  if (!r.ok) {
+    throw new Error(`agent/fetch error ${r.status}: ${text}`);
+  }
+  return json;
+}
+
+/**
+ * Make a request to an x402-gated endpoint. Three modes:
+ *   1. CHEST_AGENT_TOKEN set → POST /api/agent/fetch (server holds wallet,
+ *      handles 402+settle+attribution).
+ *   2. CHEST_API_KEY (Bearer) set → direct gate call; client pays via
+ *      AGENT_WALLET_PRIVATE_KEY, server resolves attribution from the key.
+ *   3. Else → direct gate call; client pays AND signs ed25519 referral
+ *      headers from REFERRER_WALLET (self-custodial fallback).
  *
  * Body is sent as JSON when method is POST.
  */
@@ -332,10 +384,16 @@ async function callGatedApi(
   baseUrl: string,
   path: string,
   slug: string,
-  opts: { method?: string; body?: unknown } = {}
+  opts: { method?: string; body?: unknown; idempotencyKey?: string; dryRun?: boolean } = {}
 ): Promise<any> {
   const method = opts.method ?? "GET";
   const url = `${baseUrl}${path}`;
+
+  // Mode 1: hosted-wallet via /api/agent/fetch.
+  if (CHEST_AGENT_TOKEN) {
+    return callViaAgentFetch(url, slug, opts);
+  }
+
   const baseHeaders: Record<string, string> = { "Accept": "application/json" };
   if (method !== "GET" && opts.body !== undefined) {
     baseHeaders["Content-Type"] = "application/json";
@@ -411,7 +469,7 @@ async function callGatedApi(
 // ─── MCP Server ──────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "chest", version: "0.6.0" },
+  { name: "chest", version: "0.7.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -469,9 +527,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     {
       name: "call_api",
       description:
-        "Make a request to a Chest-gated API. Pays via x402 on Solana automatically (using your AGENT_WALLET_PRIVATE_KEY) " +
-        "and attaches referrer attribution (CHEST_API_KEY Bearer if set, else ed25519-signed REFERRER_WALLET). " +
-        "For GET endpoints, only `path` is needed. For POST endpoints (e.g. ai-inference), pass `body` as a JSON object. " +
+        "Make a request to a Chest-gated API. Pays via x402 on Solana automatically. " +
+        "Auth precedence: CHEST_AGENT_TOKEN (server-held wallet via /api/agent/fetch) > " +
+        "CHEST_API_KEY (Bearer; client pays from AGENT_WALLET_PRIVATE_KEY) > " +
+        "REFERRER_WALLET (ed25519-signed; client pays). " +
+        "For GET endpoints, only `path` is needed. For POST endpoints, pass `body` as a JSON object. " +
         (singleGate
           ? `This MCP is locked to '${CHEST_SLUG}'; the \`api\` argument is optional.`
           : "Use discover_apis first to find available endpoints."),
@@ -491,6 +551,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           body: {
             type: "object",
             description: "JSON body (POST only). E.g. { text: '...' } for ai-inference endpoints.",
+          },
+          idempotencyKey: {
+            type: "string",
+            description: "Idempotency key for retry-safe charges (only honored in CHEST_AGENT_TOKEN mode; same key returns the cached settlement).",
+          },
+          dryRun: {
+            type: "boolean",
+            description: "If true, validate and price-quote without charging on-chain (only honored in CHEST_AGENT_TOKEN mode).",
           },
         },
         required: singleGate ? ["path"] : ["api", "path"],
@@ -634,6 +702,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         const data = await callGatedApi(api.gateUrl, path, api.name, {
           method: (a.method as string) ?? "GET",
           body: a.body,
+          idempotencyKey: typeof a.idempotencyKey === "string" ? a.idempotencyKey : undefined,
+          dryRun: a.dryRun === true,
         });
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       }
@@ -774,19 +844,31 @@ await server.connect(transport);
 if (CHEST_SLUG) {
   console.error(`[chest-mcp] Single-gate mode: locked to '${CHEST_SLUG}' (analyze_token disabled)`);
 }
-if (CHEST_API_KEY) {
+if (CHEST_AGENT_TOKEN) {
+  const prefix = CHEST_AGENT_TOKEN.slice(0, 12);
+  console.error(`[chest-mcp] Auth: hosted-wallet (CHEST_AGENT_TOKEN ${prefix}…) — paid calls dispatched via /api/agent/fetch`);
+  if (CHEST_API_KEY || REFERRER_WALLET || AGENT_PRIVATE_KEY_RAW) {
+    console.error("[chest-mcp] Note: CHEST_API_KEY / REFERRER_WALLET / AGENT_WALLET_PRIVATE_KEY are ignored when CHEST_AGENT_TOKEN is set");
+  }
+} else if (CHEST_API_KEY) {
   const prefix = CHEST_API_KEY.slice(0, 12);
   console.error(`[chest-mcp] Referrer: API key ${prefix}… (earning commission per paid call)`);
   if (REFERRER_WALLET) {
     console.error("[chest-mcp] Note: REFERRER_WALLET is ignored when CHEST_API_KEY is set");
   }
+  if (!AGENT_PRIVATE_KEY_RAW) {
+    console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
+  }
 } else if (REFERRER_WALLET) {
   console.error(`[chest-mcp] Referrer: ${REFERRER_WALLET} (earning commission per paid call)`);
+  if (!AGENT_PRIVATE_KEY_RAW) {
+    console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
+  }
 } else {
-  console.error("[chest-mcp] Warning: no CHEST_API_KEY or REFERRER_WALLET set, not earning commissions");
-}
-if (!AGENT_PRIVATE_KEY_RAW) {
-  console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
+  console.error("[chest-mcp] Warning: no CHEST_AGENT_TOKEN, CHEST_API_KEY, or REFERRER_WALLET set, not earning commissions");
+  if (!AGENT_PRIVATE_KEY_RAW) {
+    console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
+  }
 }
 
 // Warm the gate catalog so the first ListTools call doesn't pay the fan-out
