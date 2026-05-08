@@ -58,7 +58,7 @@ When set:
 |---|---|
 | `discover_apis` | List every Chest-gated API (or just one in single-gate mode) with pricing, endpoints, category, and on-chain metadata (`network`, `referrerBps`, `protocolBps`, `splitConfigPda`, `allowUnsignedReferrers`, `verified`). Filter by category (`trading`, `ai`, `data`, `content`, `utility`). |
 | `get_api_info` | Detail for one API including the discovery doc fetched live from the gate. |
-| `call_api` | Make a GET/POST against a registered API. Pays via x402 on Solana automatically and attaches referrer attribution (Bearer key or ed25519 signature). Composable — your agent decides which gates to call. |
+| `call_api` | Make a GET/POST against a registered API. Pays via x402 on Solana automatically and attaches referrer attribution (Bearer key or ed25519 signature). Composable — your agent decides which gates to call. Returns `eventId` for retry deduplication. |
 | `list_apps` | Browse installable Chest apps — skills, plugins, and MCP servers — that wrap one or more gates. Filter by `kind` and `verified`; page with `limit` / `offset`. |
 | `get_app` | Full detail for one app, including its README and install snippets (`claudeCode`, `codex`, `cursor`, `mcpConfig`, `prompt`). |
 
@@ -79,7 +79,37 @@ Three modes, picked by which env var is set first:
 | `CHEST_GATE_BASE_URL` | optional | Override the gate base. Defaults to `https://gate.chest.sh`. Each API resolves to `{base}/g/{slug}`. |
 | `{SLUG}_GATE_URL` | optional | Per-API URL override (e.g. `SENTIMENT_GATE_URL`). Useful for local dev against a self-hosted gate. |
 
-### Hosted-wallet mode (`CHEST_AGENT_TOKEN`)
+## `call_api` response shape
+
+The shape depends on the auth mode. **Both modes expose `eventId` at the top level** (form: `evt_<uuid>`); use it to dedupe retries — chest-gate guarantees the same `eventId` is never charged twice.
+
+**Direct mode** (`CHEST_API_KEY` or `REFERRER_WALLET`):
+
+```json
+{
+  "data":    <upstream body>,
+  "eventId": "evt_…" | null,
+  "paid":    true | false
+}
+```
+
+`eventId` is `null` for free/freebie endpoints (no settlement) and for non-Chest x402 gates. `paid: false` means the first probe returned 200 — no 402 was issued.
+
+**Hosted-wallet mode** (`CHEST_AGENT_TOKEN`) — the chest-gate `/api/agent/fetch` envelope, passed through unchanged:
+
+```json
+{
+  "success":  true,
+  "response": { "status": 200, "body": <upstream body>, "contentType": "application/json" },
+  "paid":     true,
+  "eventId":  "evt_…" | null,
+  "payment":  { "amountAtomic": 1000, "asset": "USDC", "walletAddress": "…", "cached": false, "txSignature": "…" }
+}
+```
+
+`dryRun: true` requests return `{ success: true, dryRun: true, payment: { amountAtomic, asset, walletAddress } }` — no `data` / `response.body`.
+
+## Hosted-wallet mode (`CHEST_AGENT_TOKEN`)
 
 Simplest setup — no keypair, no `@x402/*` libraries cold-start cost. The dashboard mints a `ca_live_...` token bound to a Privy-managed wallet; every paid call goes through `POST /api/agent/fetch` and the server runs the entire 402 dance.
 

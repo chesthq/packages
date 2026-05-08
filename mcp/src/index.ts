@@ -419,7 +419,8 @@ async function callGatedApi(
   const method = opts.method ?? "GET";
   const url = `${baseUrl}${path}`;
 
-  // Mode 1: hosted-wallet via /api/agent/fetch.
+  // Mode 1: hosted-wallet via /api/agent/fetch. The chest-gate envelope
+  // already includes `eventId` at the top level; pass through unchanged.
   if (CHEST_AGENT_TOKEN) {
     return callViaAgentFetch(url, slug, opts);
   }
@@ -445,7 +446,8 @@ async function callGatedApi(
       const text = await firstResponse.text();
       throw new UpstreamError(firstResponse.status, text, "gate");
     }
-    return firstResponse.json();
+    // Free / freebie / session-cached path. No settlement → eventId absent.
+    return wrapDirectResponse(firstResponse, await firstResponse.json(), false);
   }
 
   // 402, payment required.
@@ -493,7 +495,21 @@ async function callGatedApi(
     const text = await paidResponse.text();
     throw new UpstreamError(paidResponse.status, text, "gate (paid)");
   }
-  return paidResponse.json();
+  return wrapDirectResponse(paidResponse, await paidResponse.json(), true);
+}
+
+/**
+ * Direct-mode envelope: pulls `X-Chest-Event-Id` (chest-gate >= 0.2.0) off the
+ * response and pairs it with the upstream body. Non-Chest x402 gates won't
+ * emit the header → eventId is null. Hosted-wallet mode skips this and returns
+ * the chest-gate /api/agent/fetch envelope unchanged.
+ */
+function wrapDirectResponse(res: Response, data: unknown, paid: boolean) {
+  return {
+    data,
+    eventId: res.headers.get("x-chest-event-id"),
+    paid,
+  };
 }
 
 // ─── MCP Server ──────────────────────────────────────────────────────────────
