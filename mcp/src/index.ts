@@ -3,8 +3,10 @@
  * Chest MCP Server
  *
  * Exposes x402-gated APIs as MCP tools. Any AI agent using this server earns
- * commission on every paid call by injecting its wallet as X-Referrer-Wallet
- * (with an ed25519 signature, so the merchant's split program can verify it).
+ * commission on every paid call. Two attribution modes:
+ *   1. CHEST_API_KEY (Bearer cg_live_…) — recommended, payout wallet bound
+ *      at key-mint time on the dashboard.
+ *   2. REFERRER_WALLET + ed25519 signing — self-custodial, signed per call.
  *
  * Tool surface:
  *   - discover_apis      → list every known API (pricing, endpoints, category)
@@ -12,11 +14,8 @@
  *   - call_api           → make any GET/POST against any registered API
  *   - analyze_token      → convenience: parallel call to the trading data APIs
  *
- * Adding a new example API: extend KNOWN_APIS with one entry. No new tool
- * needed, call_api dispatches by name.
- *
  * Usage (stdio):
- *   REFERRER_WALLET=<addr> AGENT_WALLET_PRIVATE_KEY='[1,2,3,...]' npx @chest-gate/mcp
+ *   CHEST_API_KEY=cg_live_… AGENT_WALLET_PRIVATE_KEY='[1,2,3,…]' npx @chest-gate/mcp
  *
  * Claude Desktop config (~/.config/claude/claude_desktop_config.json):
  *   {
@@ -25,7 +24,7 @@
  *         "command": "npx",
  *         "args": ["-y", "@chest-gate/mcp"],
  *         "env": {
- *           "REFERRER_WALLET": "YOUR_SOLANA_WALLET_ADDRESS",
+ *           "CHEST_API_KEY": "cg_live_...",
  *           "AGENT_WALLET_PRIVATE_KEY": "[1,2,3,...]"
  *         }
  *       }
@@ -43,13 +42,24 @@ import { signReferral } from "./referrer.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-/** Hot wallet that signs referral claims (proves ownership). */
+/**
+ * Bearer-format referrer key (cg_live_… / cg_test_…) minted at chest.sh/dashboard/keys.
+ * When set, the server resolves payout from the API key and we skip ed25519 signing
+ * entirely, REFERRER_WALLET / REFERRER_PAYOUT_WALLET / @noble/curves are unused.
+ * x402 payment still requires AGENT_WALLET_PRIVATE_KEY.
+ */
+const CHEST_API_KEY = process.env.CHEST_API_KEY || "";
+
+/**
+ * Hot wallet that signs referral claims (proves ownership).
+ * Ignored when CHEST_API_KEY is set.
+ */
 const REFERRER_WALLET = process.env.REFERRER_WALLET || "";
 
 /**
  * Optional cold wallet to receive commission payouts.
  * The hot key (REFERRER_WALLET) signs; funds go here. Set this to separate
- * signing risk from funds.
+ * signing risk from funds. Ignored when CHEST_API_KEY is set.
  */
 const REFERRER_PAYOUT_WALLET = process.env.REFERRER_PAYOUT_WALLET || "";
 
@@ -243,8 +253,9 @@ async function getPaymentClient() {
  * Make a request to an x402-gated endpoint. Handles:
  *   - first try (might be free / freebie / session-cached)
  *   - 402 response → build payment payload
- *   - sign referral claim with REFERRER_WALLET (so we earn commission)
- *   - retry with x-payment + referral headers
+ *   - referrer attribution via either CHEST_API_KEY (Bearer) or ed25519
+ *     signed REFERRER_WALLET headers
+ *   - retry with x-payment + referrer headers
  *
  * Body is sent as JSON when method is POST.
  */
@@ -259,6 +270,12 @@ async function callGatedApi(
   const baseHeaders: Record<string, string> = { "Accept": "application/json" };
   if (method !== "GET" && opts.body !== undefined) {
     baseHeaders["Content-Type"] = "application/json";
+  }
+  // Bearer key carries referrer attribution on every request, including the
+  // pre-402 probe (lets the server short-circuit attribution lookups for
+  // cached/freebie responses).
+  if (CHEST_API_KEY) {
+    baseHeaders["Authorization"] = `Bearer ${CHEST_API_KEY}`;
   }
 
   const body = opts.body !== undefined ? JSON.stringify(opts.body) : undefined;
@@ -293,9 +310,12 @@ async function callGatedApi(
   const paymentPayload = await httpClient.createPaymentPayload(paymentRequired as any);
   const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload);
 
-  // Sign the referral claim, proves we own REFERRER_WALLET so the splitter
-  // routes the 10% commission to it (or the cold REFERRER_PAYOUT_WALLET).
-  if (REFERRER_WALLET && agentSecretKey) {
+  // Attribution: CHEST_API_KEY wins. The Bearer header was set on baseHeaders
+  // above, the server resolves payout from the api_keys row directly, so no
+  // ed25519 signature is needed and REFERRER_WALLET / REFERRER_PAYOUT_WALLET
+  // are ignored. Falls back to signed referrer headers when CHEST_API_KEY is
+  // unset and a REFERRER_WALLET is configured.
+  if (!CHEST_API_KEY && REFERRER_WALLET && agentSecretKey) {
     const referralHeaders = await signReferral(
       agentSecretKey,
       REFERRER_WALLET,
@@ -322,7 +342,7 @@ async function callGatedApi(
 // ─── MCP Server ──────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "chest", version: "0.3.0" },
+  { name: "chest", version: "0.4.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -545,10 +565,16 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 
 // Log to stderr (stdout is reserved for MCP protocol).
-if (!REFERRER_WALLET) {
-  console.error("[chest-mcp] Warning: REFERRER_WALLET not set, not earning commissions");
-} else {
+if (CHEST_API_KEY) {
+  const prefix = CHEST_API_KEY.slice(0, 12);
+  console.error(`[chest-mcp] Referrer: API key ${prefix}… (earning commission per paid call)`);
+  if (REFERRER_WALLET) {
+    console.error("[chest-mcp] Note: REFERRER_WALLET is ignored when CHEST_API_KEY is set");
+  }
+} else if (REFERRER_WALLET) {
   console.error(`[chest-mcp] Referrer: ${REFERRER_WALLET} (earning commission per paid call)`);
+} else {
+  console.error("[chest-mcp] Warning: no CHEST_API_KEY or REFERRER_WALLET set, not earning commissions");
 }
 if (!AGENT_PRIVATE_KEY_RAW) {
   console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
