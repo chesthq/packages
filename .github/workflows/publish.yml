@@ -1,0 +1,66 @@
+name: Publish
+
+# Tag-triggered npm publish. Tag pattern: <package-folder>-v<version>
+#   sdk-v0.2.2             → publishes ./sdk @ 0.2.2 to @chest-gate/sdk
+#   mcp-v0.2.2             → publishes ./mcp @ 0.2.2 to @chest-gate/mcp
+#   install-v0.1.2         → publishes ./install @ 0.1.2 to @chest-gate/install
+#   upstream-proxy-v0.1.2  → publishes ./upstream-proxy @ 0.1.2 to @chest-gate/upstream-proxy
+#
+# Bump the package's `version` in its own package.json first, merge to main,
+# then push the matching tag from main. The workflow refuses to publish if
+# the tag version disagrees with package.json.
+
+on:
+  push:
+    tags:
+      - "sdk-v*"
+      - "mcp-v*"
+      - "install-v*"
+      - "upstream-proxy-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Parse tag
+        id: parse
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          # Tag is "<folder>-v<version>". Folder may contain hyphens (upstream-proxy).
+          folder="${tag%-v*}"
+          version="${tag##*-v}"
+          echo "folder=$folder" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Tag: $tag → folder=$folder version=$version"
+
+      - name: Verify package.json version matches tag
+        run: |
+          folder="${{ steps.parse.outputs.folder }}"
+          tag_version="${{ steps.parse.outputs.version }}"
+          pkg_version=$(jq -r .version "./$folder/package.json")
+          if [ "$pkg_version" != "$tag_version" ]; then
+            echo "::error::Tag version ($tag_version) does not match $folder/package.json version ($pkg_version). Bump package.json on main, then re-tag."
+            exit 1
+          fi
+          echo "Versions match: $pkg_version"
+
+      - run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build --workspace=${{ steps.parse.outputs.folder }}
+
+      - name: Publish
+        run: npm publish --workspace=${{ steps.parse.outputs.folder }} --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -22,7 +22,18 @@ npm run build
 
 Each package builds independently with its own `tsc`.
 
-## Publish
+## Release
+
+Tag-triggered, one tag → one package. Bump `version` in the package's own `package.json`, merge to `main`, then push a matching tag from `main`:
+
+```bash
+# example: shipping @chest-gate/sdk 0.2.2
+git tag sdk-v0.2.2 && git push origin sdk-v0.2.2
+```
+
+Tag patterns: `sdk-v*`, `mcp-v*`, `install-v*`, `upstream-proxy-v*`. The publish workflow refuses if the tag version doesn't match `<folder>/package.json`.
+
+Manual fallback (skip CI):
 
 ```bash
 npm run release:sdk             # @chest-gate/sdk
@@ -30,8 +41,6 @@ npm run release:mcp             # @chest-gate/mcp
 npm run release:install         # @chest-gate/install
 npm run release:upstream-proxy  # @chest-gate/upstream-proxy
 ```
-
-Bump the package's `version` in its own `package.json`, run the matching release script.
 
 ## Related
 
