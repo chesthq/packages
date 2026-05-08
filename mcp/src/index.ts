@@ -9,10 +9,12 @@
  *   2. REFERRER_WALLET + ed25519 signing — self-custodial, signed per call.
  *
  * Tool surface:
- *   - discover_apis      → list every known API (pricing, endpoints, category)
- *   - get_api_info       → details for one API (incl. on-chain split metadata)
- *   - call_api           → make any GET/POST against any registered API
+ *   - discover_apis      → list every known gate (pricing, endpoints, category)
+ *   - get_api_info       → details for one gate (incl. on-chain split metadata)
+ *   - call_api           → make any GET/POST against any registered gate
  *   - analyze_token      → convenience: parallel call to the trading data APIs
+ *   - list_apps          → list installable apps (skill | plugin | mcp) wrapping gates
+ *   - get_app            → full app detail incl. install snippets
  *
  * Usage (stdio):
  *   CHEST_API_KEY=cg_live_… AGENT_WALLET_PRIVATE_KEY='[1,2,3,…]' npx @chest-gate/mcp
@@ -409,7 +411,7 @@ async function callGatedApi(
 // ─── MCP Server ──────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "chest", version: "0.5.0" },
+  { name: "chest", version: "0.6.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -519,6 +521,49 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
     });
   }
+
+  // Apps catalog — agent-installable artifacts (skill | plugin | mcp) that
+  // wrap one or more gates. Available in both modes; even a single-gate
+  // server might want to surface skills/MCPs/plugins built around its gate.
+  tools.push(
+    {
+      name: "list_apps",
+      description:
+        "List installable Chest apps — skills, plugins, and MCP servers — that wrap one or more paid gates. " +
+        "Each entry includes the app slug, kind, author, endpoints, referrer rate, install count, and version. " +
+        "Use `kind` to narrow to a specific artifact type and `verified: true` for the curated subset. " +
+        "Page with `limit` (1-200, default 50) and `offset`.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["skill", "plugin", "mcp"],
+            description: "Filter by artifact type.",
+          },
+          verified: {
+            type: "boolean",
+            description: "When true, return only the curated/verified subset.",
+          },
+          limit: { type: "integer", minimum: 1, maximum: 200, description: "Page size, default 50." },
+          offset: { type: "integer", minimum: 0, description: "Page offset, default 0." },
+        },
+      },
+    },
+    {
+      name: "get_app",
+      description:
+        "Fetch full detail for one installable app, including its description, README, and install snippets " +
+        "(`claudeCode`, `codex`, `cursor`, `mcpConfig`, `prompt`). Use after list_apps to inspect or install.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          slug: { type: "string", description: "App slug, e.g. 'trading-decision'." },
+        },
+        required: ["slug"],
+      },
+    },
+  );
 
   return { tools };
 });
@@ -634,6 +679,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         });
 
         return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] };
+      }
+
+      case "list_apps": {
+        const params = new URLSearchParams();
+        if (typeof a.kind === "string") params.set("kind", a.kind);
+        if (a.verified === true) params.set("verified", "true");
+        if (typeof a.limit === "number") params.set("limit", String(a.limit));
+        if (typeof a.offset === "number") params.set("offset", String(a.offset));
+        const qs = params.toString();
+        const url = `${CHEST_GATE_BASE_URL}/api/apps${qs ? `?${qs}` : ""}`;
+        const r = await fetch(url, { headers: { Accept: "application/json" } });
+        if (!r.ok) {
+          const text = await r.text();
+          return {
+            content: [{ type: "text", text: `list_apps upstream error ${r.status}: ${text}` }],
+            isError: true,
+          };
+        }
+        const json = await r.json();
+        return { content: [{ type: "text", text: JSON.stringify(json, null, 2) }] };
+      }
+
+      case "get_app": {
+        const slug = a.slug;
+        if (typeof slug !== "string" || slug.length === 0) {
+          return {
+            content: [{ type: "text", text: "Missing required `slug` argument." }],
+            isError: true,
+          };
+        }
+        const url = `${CHEST_GATE_BASE_URL}/api/apps/${encodeURIComponent(slug)}`;
+        const r = await fetch(url, { headers: { Accept: "application/json" } });
+        if (!r.ok) {
+          const text = await r.text();
+          return {
+            content: [{ type: "text", text: `get_app upstream error ${r.status}: ${text}` }],
+            isError: true,
+          };
+        }
+        const json = await r.json();
+        return { content: [{ type: "text", text: JSON.stringify(json, null, 2) }] };
       }
 
       default:
