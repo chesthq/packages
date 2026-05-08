@@ -1,0 +1,44 @@
+{
+  "name": "@chest-gate/sdk",
+  "version": "0.2.1",
+  "description": "Drop-in fetch() that pays x402 gates from any agent. Use a managed wallet (Chest API key) or a local keypair.",
+  "keywords": [
+    "x402",
+    "solana",
+    "agent",
+    "mcp",
+    "skill",
+    "chest-gate"
+  ],
+  "homepage": "https://chest.sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chesthq/packages.git",
+    "directory": "sdk"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@solana/kit": "^5.5.1",
+    "@solana/web3.js": "^1.98.4",
+    "@x402/core": "^2.9.0",
+    "@x402/svm": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}
