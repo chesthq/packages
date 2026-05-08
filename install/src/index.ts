@@ -18,6 +18,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -47,10 +48,16 @@ function usage(): never {
       `chest-install ${VERSION}`,
       "",
       "Usage:",
-      "  npx @chest-gate/install <slug>",
+      "  npx @chest-gate/install <slug> [flags]",
+      "",
+      "Flags:",
+      "  --force     remove an existing target before installing (destructive)",
+      "  --upgrade   rename an existing target to <name>.bak-<timestamp> first",
       "",
       "Examples:",
       "  npx @chest-gate/install trading-bot",
+      "  npx @chest-gate/install trading-bot --upgrade",
+      "  npx @chest-gate/install trading-bot --force",
       "",
       "Env:",
       "  CHEST_API   override registry (default: https://gate.chest.sh)",
@@ -58,6 +65,25 @@ function usage(): never {
     ].join("\n"),
   );
   process.exit(1);
+}
+
+interface CliFlags {
+  force: boolean;
+  upgrade: boolean;
+}
+
+function parseFlags(argv: string[]): { positional: string[]; flags: CliFlags } {
+  const positional: string[] = [];
+  const flags: CliFlags = { force: false, upgrade: false };
+  for (const a of argv) {
+    if (a === "--force") flags.force = true;
+    else if (a === "--upgrade") flags.upgrade = true;
+    else if (a.startsWith("-")) {
+      console.error(`Unknown flag: ${a}`);
+      usage();
+    } else positional.push(a);
+  }
+  return { positional, flags };
 }
 
 function parseGithubTreeUrl(
@@ -172,9 +198,13 @@ async function fetchManifest(slug: string): Promise<AppManifest> {
 }
 
 async function main() {
-  const args = process.argv.slice(2).filter((a) => !a.startsWith("-"));
-  if (args.length !== 1) usage();
-  const slug = args[0];
+  const { positional, flags } = parseFlags(process.argv.slice(2));
+  if (positional.length !== 1) usage();
+  if (flags.force && flags.upgrade) {
+    console.error("--force and --upgrade are mutually exclusive.");
+    process.exit(1);
+  }
+  const slug = positional[0];
 
   console.log(`\n  ⚡ chest install ${slug}\n`);
 
@@ -233,11 +263,22 @@ async function main() {
     const target = targetDir(app.kind, skillName);
 
     if (existsSync(target)) {
-      console.error(
-        `\nTarget already exists: ${target}\n` +
-          `Remove it first or set CHEST_HOME to a different root.`,
-      );
-      process.exit(2);
+      if (flags.force) {
+        rmSync(target, { recursive: true, force: true });
+        console.log(`  removed: ${target} (--force)`);
+      } else if (flags.upgrade) {
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const backup = `${target}.bak-${stamp}`;
+        renameSync(target, backup);
+        console.log(`  backed up: ${backup}`);
+      } else {
+        console.error(
+          `\nTarget already exists: ${target}\n` +
+            `Re-run with --upgrade to back it up to <name>.bak-<timestamp>,\n` +
+            `or --force to remove it first. Or set CHEST_HOME to a different root.`,
+        );
+        process.exit(2);
+      }
     }
 
     mkdirSync(target, { recursive: true });
