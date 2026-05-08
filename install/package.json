@@ -1,6 +1,6 @@
 {
   "name": "@chest-gate/install",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "One-command installer for Chest Gate skills. Resolves a skill slug against the chest.sh registry, fetches its source from GitHub, and drops it in the right runtime folder.",
   "keywords": [
     "x402",
