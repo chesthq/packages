@@ -37,6 +37,10 @@
  *   }
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -92,6 +96,52 @@ const CHEST_GATE_BASE_URL = process.env.CHEST_GATE_BASE_URL || "https://gate.che
 const CHEST_SLUG = process.env.CHEST_SLUG || "";
 
 const gate = (slug: string) => `${CHEST_GATE_BASE_URL}/g/${slug}`;
+
+// ─── Package metadata ────────────────────────────────────────────────────────
+
+/** Read version from sibling package.json so the User-Agent and server name
+ *  stay in sync without editing two files on every release. */
+function readPackageVersion(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pkgPath = join(here, "..", "package.json");
+    return JSON.parse(readFileSync(pkgPath, "utf8")).version as string;
+  } catch {
+    return "0.0.0";
+  }
+}
+const PKG_VERSION = readPackageVersion();
+const USER_AGENT = `chest-gate-mcp/${PKG_VERSION}`;
+const FETCH_TIMEOUT_MS = 30_000;
+
+// ─── HTTP helper ─────────────────────────────────────────────────────────────
+
+/**
+ * Wrapped fetch: 30s AbortController timeout + User-Agent stamp on every
+ * outbound request. Use this for all chest-gate / gate calls so timeouts
+ * and identification are uniform.
+ */
+async function chestFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const headers = new Headers(init.headers);
+  if (!headers.has("User-Agent")) headers.set("User-Agent", USER_AGENT);
+  try {
+    return await fetch(url, { ...init, headers, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Thrown when an upstream gate or chest-gate API responds non-2xx. The
+ *  raw status + body text travel with the error so handlers can surface
+ *  them verbatim per the MCP tool spec. */
+class UpstreamError extends Error {
+  constructor(public status: number, public bodyText: string, label = "upstream") {
+    super(`${label} ${status}: ${bodyText}`);
+    this.name = "UpstreamError";
+  }
+}
 
 // ─── Gate catalog ────────────────────────────────────────────────────────────
 //
@@ -188,7 +238,7 @@ interface BazaarEndpoint {
  */
 async function fetchGateEndpoints(gateUrl: string): Promise<Record<string, string>> {
   try {
-    const r = await fetch(`${gateUrl}/.well-known/chest.json`);
+    const r = await chestFetch(`${gateUrl}/.well-known/chest.json`);
     if (!r.ok) return {};
     const body = await r.json() as { apps?: { bazaar?: { endpoints?: BazaarEndpoint[] } } };
     const eps = body.apps?.bazaar?.endpoints ?? [];
@@ -236,7 +286,7 @@ async function loadGates(): Promise<ApiInfo[]> {
 
   inflight = (async () => {
     try {
-      const r = await fetch(`${CHEST_GATE_BASE_URL}/api/gates`);
+      const r = await chestFetch(`${CHEST_GATE_BASE_URL}/api/gates`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const body = await r.json() as { deployments?: GateDeployment[] };
       let deployments = body.deployments ?? [];
@@ -351,7 +401,7 @@ async function callViaAgentFetch(
   if (opts.idempotencyKey) payload.idempotencyKey = opts.idempotencyKey;
   if (opts.dryRun) payload.dryRun = true;
 
-  const r = await fetch(`${CHEST_GATE_BASE_URL}/api/agent/fetch`, {
+  const r = await chestFetch(`${CHEST_GATE_BASE_URL}/api/agent/fetch`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${CHEST_AGENT_TOKEN}`,
@@ -364,7 +414,7 @@ async function callViaAgentFetch(
   let json: unknown = null;
   try { json = JSON.parse(text); } catch { /* non-JSON */ }
   if (!r.ok) {
-    throw new Error(`agent/fetch error ${r.status}: ${text}`);
+    throw new UpstreamError(r.status, text, "/api/agent/fetch");
   }
   return json;
 }
@@ -408,12 +458,12 @@ async function callGatedApi(
   const body = opts.body !== undefined ? JSON.stringify(opts.body) : undefined;
 
   // First try, may be free, freebie, or session-cached.
-  const firstResponse = await fetch(url, { method, headers: baseHeaders, body });
+  const firstResponse = await chestFetch(url, { method, headers: baseHeaders, body });
 
   if (firstResponse.status !== 402) {
     if (!firstResponse.ok) {
       const text = await firstResponse.text();
-      throw new Error(`API error ${firstResponse.status}: ${text}`);
+      throw new UpstreamError(firstResponse.status, text, "gate");
     }
     return firstResponse.json();
   }
@@ -453,7 +503,7 @@ async function callGatedApi(
     Object.assign(paymentHeaders, referralHeaders);
   }
 
-  const paidResponse = await fetch(url, {
+  const paidResponse = await chestFetch(url, {
     method,
     headers: { ...baseHeaders, ...paymentHeaders },
     body,
@@ -461,7 +511,7 @@ async function callGatedApi(
 
   if (!paidResponse.ok) {
     const text = await paidResponse.text();
-    throw new Error(`Paid API error ${paidResponse.status}: ${text}`);
+    throw new UpstreamError(paidResponse.status, text, "gate (paid)");
   }
   return paidResponse.json();
 }
@@ -469,7 +519,7 @@ async function callGatedApi(
 // ─── MCP Server ──────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "chest", version: "0.7.0" },
+  { name: "chest", version: PKG_VERSION },
   { capabilities: { tools: {} } }
 );
 
@@ -636,6 +686,49 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools };
 });
 
+// ─── Tool input schemas ──────────────────────────────────────────────────────
+//
+// Validation runs at the case boundary in the dispatcher. The MCP SDK's
+// listTools inputSchema is documentation for the model; zod parsing is the
+// runtime guarantee.
+
+const DiscoverApisSchema = z.object({
+  category: z.enum(["trading", "ai", "data", "content", "utility"]).optional(),
+});
+const GetApiInfoSchema = z.object({
+  api: z.string().min(1).optional(),
+});
+const CallApiSchema = z.object({
+  api: z.string().min(1).optional(),
+  path: z.string().min(1),
+  method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional(),
+  body: z.unknown().optional(),
+  idempotencyKey: z.string().min(1).optional(),
+  dryRun: z.boolean().optional(),
+});
+const AnalyzeTokenSchema = z.object({
+  token: z.string().min(1),
+  deep: z.boolean().optional(),
+});
+const ListAppsSchema = z.object({
+  kind: z.enum(["skill", "plugin", "mcp"]).optional(),
+  verified: z.boolean().optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+  offset: z.number().int().min(0).optional(),
+});
+const GetAppSchema = z.object({
+  slug: z.string().min(1),
+});
+
+/** Returns a tool-shaped error envelope with the zod issues flattened. */
+function zodErrorReply(name: string, err: z.ZodError) {
+  const msg = err.issues.map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`).join("; ");
+  return {
+    content: [{ type: "text", text: `Invalid arguments to ${name}: ${msg}` }],
+    isError: true,
+  };
+}
+
 server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
   const { name, arguments: args } = request.params;
   const a = (args ?? {}) as Record<string, unknown>;
@@ -643,8 +736,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
   try {
     switch (name) {
       case "discover_apis": {
+        const parsed = DiscoverApisSchema.safeParse(a);
+        if (!parsed.success) return zodErrorReply(name, parsed.error);
         const apis = await loadGates();
-        const cat = a.category as string | undefined;
+        const cat = parsed.data.category;
         const filtered = cat ? apis.filter((x) => x.category === cat) : apis;
         return {
           content: [{ type: "text", text: JSON.stringify(filtered, null, 2) }],
@@ -652,7 +747,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       }
 
       case "get_api_info": {
-        const slug = resolveSlug(a.api);
+        const parsed = GetApiInfoSchema.safeParse(a);
+        if (!parsed.success) return zodErrorReply(name, parsed.error);
+        const slug = resolveSlug(parsed.data.api);
         if (slug instanceof Error) {
           return { content: [{ type: "text", text: slug.message }], isError: true };
         }
@@ -670,7 +767,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         // if the gate isn't running (local dev).
         let discovery: unknown = null;
         try {
-          const r = await fetch(`${api.gateUrl}/.well-known/chest.json`);
+          const r = await chestFetch(`${api.gateUrl}/.well-known/chest.json`);
           if (r.ok) discovery = await r.json();
         } catch {
           // Gate may not be running, return catalog info only.
@@ -681,7 +778,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       }
 
       case "call_api": {
-        const slug = resolveSlug(a.api);
+        const parsed = CallApiSchema.safeParse(a);
+        if (!parsed.success) return zodErrorReply(name, parsed.error);
+        const slug = resolveSlug(parsed.data.api);
         if (slug instanceof Error) {
           return { content: [{ type: "text", text: slug.message }], isError: true };
         }
@@ -692,18 +791,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             isError: true,
           };
         }
-        const path = a.path as string;
-        if (!path?.startsWith("/")) {
+        if (!parsed.data.path.startsWith("/")) {
           return {
-            content: [{ type: "text", text: `Path must start with '/', got '${path}'` }],
+            content: [{ type: "text", text: `Path must start with '/', got '${parsed.data.path}'` }],
             isError: true,
           };
         }
-        const data = await callGatedApi(api.gateUrl, path, api.name, {
-          method: (a.method as string) ?? "GET",
-          body: a.body,
-          idempotencyKey: typeof a.idempotencyKey === "string" ? a.idempotencyKey : undefined,
-          dryRun: a.dryRun === true,
+        const data = await callGatedApi(api.gateUrl, parsed.data.path, api.name, {
+          method: parsed.data.method ?? "GET",
+          body: parsed.data.body,
+          idempotencyKey: parsed.data.idempotencyKey,
+          dryRun: parsed.data.dryRun,
         });
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       }
@@ -715,8 +813,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             isError: true,
           };
         }
-        const token = (a.token as string).toUpperCase();
-        const deep = !!a.deep;
+        const parsed = AnalyzeTokenSchema.safeParse(a);
+        if (!parsed.success) return zodErrorReply(name, parsed.error);
+        const token = parsed.data.token.toUpperCase();
+        const deep = parsed.data.deep === true;
 
         // Always fetch the core 3.
         const coreCalls: Array<{ slug: string; promise: Promise<any> }> = [
@@ -752,18 +852,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       }
 
       case "list_apps": {
+        const parsed = ListAppsSchema.safeParse(a);
+        if (!parsed.success) return zodErrorReply(name, parsed.error);
         const params = new URLSearchParams();
-        if (typeof a.kind === "string") params.set("kind", a.kind);
-        if (a.verified === true) params.set("verified", "true");
-        if (typeof a.limit === "number") params.set("limit", String(a.limit));
-        if (typeof a.offset === "number") params.set("offset", String(a.offset));
+        if (parsed.data.kind) params.set("kind", parsed.data.kind);
+        if (parsed.data.verified === true) params.set("verified", "true");
+        if (parsed.data.limit !== undefined) params.set("limit", String(parsed.data.limit));
+        if (parsed.data.offset !== undefined) params.set("offset", String(parsed.data.offset));
         const qs = params.toString();
         const url = `${CHEST_GATE_BASE_URL}/api/apps${qs ? `?${qs}` : ""}`;
-        const r = await fetch(url, { headers: { Accept: "application/json" } });
+        const r = await chestFetch(url, { headers: { Accept: "application/json" } });
         if (!r.ok) {
           const text = await r.text();
+          // Surface upstream verbatim in a structured envelope rather than
+          // reformatting into a sentence — clients can dispatch on status.
           return {
-            content: [{ type: "text", text: `list_apps upstream error ${r.status}: ${text}` }],
+            content: [{ type: "text", text: JSON.stringify({ status: r.status, body: tryParseJson(text) }, null, 2) }],
             isError: true,
           };
         }
@@ -772,19 +876,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       }
 
       case "get_app": {
-        const slug = a.slug;
-        if (typeof slug !== "string" || slug.length === 0) {
-          return {
-            content: [{ type: "text", text: "Missing required `slug` argument." }],
-            isError: true,
-          };
-        }
-        const url = `${CHEST_GATE_BASE_URL}/api/apps/${encodeURIComponent(slug)}`;
-        const r = await fetch(url, { headers: { Accept: "application/json" } });
+        const parsed = GetAppSchema.safeParse(a);
+        if (!parsed.success) return zodErrorReply(name, parsed.error);
+        const url = `${CHEST_GATE_BASE_URL}/api/apps/${encodeURIComponent(parsed.data.slug)}`;
+        const r = await chestFetch(url, { headers: { Accept: "application/json" } });
         if (!r.ok) {
           const text = await r.text();
           return {
-            content: [{ type: "text", text: `get_app upstream error ${r.status}: ${text}` }],
+            content: [{ type: "text", text: JSON.stringify({ status: r.status, body: tryParseJson(text) }, null, 2) }],
             isError: true,
           };
         }
@@ -799,12 +898,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         };
     }
   } catch (err) {
+    // UpstreamError carries the raw status + body so handlers can surface
+    // the upstream response verbatim instead of reformatting it.
+    if (err instanceof UpstreamError) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ status: err.status, body: tryParseJson(err.bodyText) }, null, 2) }],
+        isError: true,
+      };
+    }
     return {
       content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
       isError: true,
     };
   }
 });
+
+/** Best-effort JSON parse with string fallback. Used to surface upstream
+ *  bodies in their native shape when possible, raw text otherwise. */
+function tryParseJson(text: string): unknown {
+  try { return JSON.parse(text); } catch { return text; }
+}
 
 /** Helper for analyze_token, looks up an API and calls one of its endpoints. */
 async function callForToken(apiName: string, path: string): Promise<any> {
