@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 /**
- * `npx @chest-gate/install <slug>` — one-command installer for Chest Gate skills.
+ * `npx @chest-gate/install <slug>` — one-command installer for Chest Gate apps.
  *
- * Looks up the slug at gate.chest.sh, parses sourceUrl (a GitHub tree URL),
+ * Resolves a slug against gate.chest.sh, parses sourceUrl (a GitHub tree URL),
  * shallow-clones the repo into a temp dir, copies the skill subpath to the
- * runtime folder (~/.claude/skills/<name> for kind=skill), then runs
- * `npm install` if package.json is present.
+ * runtime folder (~/.claude/skills/<name>), then runs `npm install` if a
+ * package.json is present.
+ *
+ * For app kinds we can't auto-install yet (plugin, mcp, source-less skill),
+ * the CLI reads the rest of the manifest — name, kind, tagline, description,
+ * readme, homepage — and prints them so the user has somewhere to go. The
+ * install command stays uniform across every published app; the fallback
+ * keeps it from feeling like a lookup failure.
  *
  * No npm deps; uses git + standard Node built-ins.
  */
@@ -26,7 +32,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
-const VERSION = "0.1.5";
+const VERSION = "0.2.0";
 const DEFAULT_API = "https://gate.chest.sh";
 const KEYS_URL = "https://chest.sh/app/keys";
 const AUTH_FILE = join(homedir(), ".chest", "auth.json");
@@ -38,7 +44,12 @@ interface AppManifest {
   name: string;
   kind: AppKind;
   version: string;
+  tagline: string;
+  description: string;
+  readme: string;
+  endpoints: string[];
   sourceUrl: string | null;
+  homepageUrl: string | null;
   install: Record<string, string | undefined>;
 }
 
@@ -114,17 +125,37 @@ function readSkillName(dir: string, fallback: string): string {
   return name ? name[1].trim() : fallback;
 }
 
-function targetDir(kind: AppKind, name: string): string {
+function targetDir(name: string): string {
   const root =
     process.env.CHEST_HOME ?? join(homedir(), ".claude", "skills");
-  if (kind !== "skill") {
-    console.error(
-      `\nThis installer currently only handles kind=skill. Got kind=${kind}.\n` +
-        `Follow the manual install on the app's page for now.`,
-    );
-    process.exit(2);
-  }
   return join(root, name);
+}
+
+// Print everything we know about the app and exit. Used when the CLI can't
+// auto-install (non-skill kinds, source-less skills, non-GitHub sources)
+// so the user has the author-controlled context — readme, description,
+// homepage — without it feeling like a lookup failure.
+function showManifestAndExit(app: AppManifest, reason: string): never {
+  const homepage = app.homepageUrl || `https://chest.sh/x/${app.slug}`;
+  console.log(`\n  ${app.name}  (${app.kind}, v${app.version})`);
+  if (app.tagline) console.log(`  ${app.tagline}`);
+  console.log();
+  console.log(`  ${reason}`);
+  if (app.description) {
+    console.log();
+    for (const line of app.description.split("\n")) console.log(`  ${line}`);
+  }
+  if (app.readme) {
+    const lines = app.readme.split("\n");
+    const head = lines.slice(0, 20);
+    console.log();
+    for (const line of head) console.log(`  ${line}`);
+    if (lines.length > head.length) console.log("  …");
+  }
+  console.log();
+  console.log(`  Homepage: ${homepage}`);
+  console.log();
+  process.exit(2);
 }
 
 interface AuthFile {
@@ -217,21 +248,25 @@ async function main() {
   console.log(`\n  ⚡ chest install ${slug}\n`);
 
   const app = await fetchManifest(slug);
-  if (!app.sourceUrl) {
-    console.error(
-      `\n${slug} has no sourceUrl in its manifest, can't install. Ask the\n` +
-        `author to publish a sourceUrl pointing at a GitHub tree URL.`,
-    );
-    process.exit(2);
-  }
 
+  if (app.kind !== "skill") {
+    showManifestAndExit(
+      app,
+      `Auto-install for kind=${app.kind} isn't supported yet — see the homepage for setup instructions.`,
+    );
+  }
+  if (!app.sourceUrl) {
+    showManifestAndExit(
+      app,
+      "This app doesn't have a GitHub source registered yet, so the CLI can't auto-install it.",
+    );
+  }
   const parsed = parseGithubTreeUrl(app.sourceUrl);
   if (!parsed) {
-    console.error(
-      `\nsourceUrl is not a GitHub tree URL: ${app.sourceUrl}\n` +
-        `Expected: https://github.com/<owner>/<repo>/tree/<ref>/<path>`,
+    showManifestAndExit(
+      app,
+      `sourceUrl is not a GitHub tree URL (${app.sourceUrl}). Expected: https://github.com/<owner>/<repo>/tree/<ref>/<path>`,
     );
-    process.exit(2);
   }
 
   const tmp = mkdtempSync(join(tmpdir(), "chest-install-"));
@@ -268,7 +303,7 @@ async function main() {
 
     const fallbackName = parsed.subpath.split("/").pop() ?? slug;
     const skillName = readSkillName(sourceDir, fallbackName);
-    const target = targetDir(app.kind, skillName);
+    const target = targetDir(skillName);
 
     if (existsSync(target)) {
       if (flags.force) {
