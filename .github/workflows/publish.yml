@@ -60,14 +60,33 @@ jobs:
           fi
           echo "Versions match: $pkg_version"
 
-      - run: npm ci --ignore-scripts
+      # Idempotency: backfilling a tag for an already-published version
+      # (e.g. tagging the historical sdk-v0.2.1 commit) should no-op
+      # gracefully, not fail with EPUBLISHCONFLICT.
+      - name: Skip if already published
+        id: skip
+        run: |
+          folder="${{ steps.parse.outputs.folder }}"
+          tag_version="${{ steps.parse.outputs.version }}"
+          pkg_name=$(jq -r .name "./$folder/package.json")
+          if npm view "$pkg_name@$tag_version" version >/dev/null 2>&1; then
+            echo "::notice::$pkg_name@$tag_version is already on npm — skipping publish (treating as backfill)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Build
+      - if: steps.skip.outputs.skip != 'true'
+        run: npm ci --ignore-scripts
+
+      - if: steps.skip.outputs.skip != 'true'
+        name: Build
         run: npm run build --workspace=${{ steps.parse.outputs.folder }}
 
       # Auth handled by npm Trusted Publisher (OIDC). The id-token: write
       # permission above lets the npm CLI exchange the GitHub-issued OIDC
       # token for a short-lived registry token. No secret env var here —
       # an empty NODE_AUTH_TOKEN would break OIDC fallback.
-      - name: Publish
+      - if: steps.skip.outputs.skip != 'true'
+        name: Publish
         run: npm publish --workspace=${{ steps.parse.outputs.folder }} --access public --provenance
