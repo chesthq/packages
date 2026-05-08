@@ -1,0 +1,45 @@
+{
+  "name": "@chest-gate/install",
+  "version": "0.1.0",
+  "description": "One-command installer for Chest Gate skills. Resolves a skill slug against the chest.sh registry, fetches its source from GitHub, and drops it in the right runtime folder.",
+  "keywords": [
+    "x402",
+    "solana",
+    "agent",
+    "claude",
+    "skill",
+    "chest-gate"
+  ],
+  "homepage": "https://chest.sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smd00/chest-gate.git",
+    "directory": "packages/install-cli"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "chest-install": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build",
+    "release": "npm run build && npm publish --access public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}
