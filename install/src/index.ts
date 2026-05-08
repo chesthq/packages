@@ -32,7 +32,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const DEFAULT_API = "https://gate.chest.sh";
 const KEYS_URL = "https://chest.sh/app/keys";
 const AUTH_FILE = join(homedir(), ".chest", "auth.json");
@@ -65,9 +65,9 @@ const HELP_TEXT = [
   "  --upgrade   rename an existing target to <name>.bak-<timestamp> first",
   "",
   "Examples:",
-  "  npx @chest-gate/install trading-bot",
-  "  npx @chest-gate/install trading-bot --upgrade",
-  "  npx @chest-gate/install trading-bot --force",
+  "  npx @chest-gate/install trading-decision",
+  "  npx @chest-gate/install trading-decision --upgrade",
+  "  npx @chest-gate/install trading-decision --force",
   "",
   "Env:",
   "  CHEST_API      override registry (default: https://gate.chest.sh)",

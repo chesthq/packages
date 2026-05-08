@@ -16,7 +16,7 @@ npx -y @chest-gate/install <slug>
 Example:
 
 ```bash
-npx -y @chest-gate/install trading-bot
+npx -y @chest-gate/install trading-decision
 ```
 
 ## What it does
@@ -49,7 +49,7 @@ Zero runtime dependencies — uses only Node built-ins, `git`, and `npm`.
 For a slug to be installable through this CLI, its chest.sh App manifest must include:
 
 - `kind: "skill"` (other kinds aren't supported yet — `plugin`, `mcp` coming soon)
-- `sourceUrl`: a GitHub `tree` URL pointing at the package folder, e.g. `https://github.com/chesthq/apps/tree/main/skills/trading-bot`
+- `sourceUrl`: a GitHub `tree` URL pointing at the package folder, e.g. `https://github.com/chesthq/apps/tree/main/skills/trading-decision`
 
 App authors set both at publish time via the chest.sh dashboard or the publishing API.
 
