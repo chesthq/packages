@@ -23,9 +23,11 @@
  *   3. `~/.chest/agent.json` exists    → local
  *   4. throw with a helpful message
  *
- * `appSlug` (optional): declare which App is calling. The server logs it for
- * analytics today and will resolve the referrer wallet from the App's
- * manifest in a future release. Pass `referrerWallet` to override.
+ * `appSlug` (optional): declare which App is calling. Forwarded as
+ * `x-chest-app` on the paid request — the gate attributes the referrer
+ * cut to the app's registered author wallet. Authors register an app once
+ * on chest.sh, no key needs to ship in skill source. Pass `referrerWallet`
+ * to override.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -51,9 +53,11 @@ export interface PaidFetchOptions {
    */
   apiKey?: string;
   /**
-   * Declares which App is calling, `@author/app-name`. The server logs it
-   * and will resolve the referrer wallet from the App's manifest in a
-   * future release. Pass `referrerWallet` to override.
+   * Declares which App is calling, `@author/app-name`. Forwarded as
+   * `x-chest-app` on the paid request so the gate attributes the referrer
+   * cut to the app's registered author wallet. The target gate must be
+   * one of the app's registered endpoints. Pass `referrerWallet` to
+   * override (explicit beats implicit).
    */
   appSlug?: string;
   /** Override chest.sh API URL (used in api-key and privy modes). */
@@ -126,6 +130,13 @@ export async function paidFetch(
   const paidHeaders = new Headers(opts.init?.headers ?? {});
   paidHeaders.set("x-payment", xPayment);
   if (opts.referrerWallet) paidHeaders.set("x-referrer-wallet", opts.referrerWallet);
+  // Skill-author attribution: the gate resolves `appSlug → authorWallet`
+  // from its own apps registry, so no key needs to ship in source. Skipped
+  // when the caller passed an explicit referrerWallet (explicit beats
+  // implicit, same precedence as the agent-fetch path).
+  if (opts.appSlug && !opts.referrerWallet) {
+    paidHeaders.set("x-chest-app", opts.appSlug);
+  }
 
   const paidRes = await fetch(url, { ...opts.init, headers: paidHeaders });
   if (!paidRes.ok) {
