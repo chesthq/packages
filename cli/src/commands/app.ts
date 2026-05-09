@@ -2,13 +2,10 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { Keypair } from "@solana/web3.js";
-import {
-  buildManifestObject,
-  hashManifest,
-  signAppMessage,
-} from "@chest-gate/proxy";
-import { loadManifest } from "../manifest.js";
+import { hashManifest, signAppMessage } from "@chest-gate/proxy";
+import { loadManifest, toAppSlug, type AppManifest, APP_KINDS, type AppKind } from "../manifest.js";
 import { ensureKeypair } from "../keypair.js";
 
 export const appCommand = new Command("app").description(
@@ -32,13 +29,23 @@ appCommand
     }
 
     const m = result.manifest;
+    const slug = toAppSlug(m);
     console.log(chalk.green(`✓ ${path} is valid`));
+    console.log("");
+    console.log(chalk.bold("  appSlug        ") + chalk.cyan(slug));
+    console.log(chalk.gray("  ") + chalk.gray("↑ pass this to paidFetch({ appSlug }) or set CHEST_APP_SLUG"));
     console.log("");
     console.log(chalk.gray("  name           ") + chalk.white(m.name));
     console.log(chalk.gray("  author         ") + chalk.white(m.author));
+    if (m.displayName) console.log(chalk.gray("  displayName    ") + chalk.white(m.displayName));
     console.log(chalk.gray("  version        ") + chalk.white(m.version));
     console.log(chalk.gray("  description    ") + chalk.white(m.description));
+    if (m.tagline) console.log(chalk.gray("  tagline        ") + chalk.white(m.tagline));
+    console.log(chalk.gray("  kind           ") + chalk.white(m.kind ?? "skill (default)"));
     console.log(chalk.gray("  capabilityTags ") + chalk.white(m.capabilityTags.join(", ")));
+    if (m.endpoints && m.endpoints.length > 0) {
+      console.log(chalk.gray("  endpoints      ") + chalk.white(m.endpoints.join(", ")));
+    }
     if (m.upstreamGates && m.upstreamGates.length > 0) {
       console.log(chalk.gray("  upstreamGates  ") + chalk.white(m.upstreamGates.join(", ")));
     }
@@ -55,13 +62,27 @@ appCommand
     );
   });
 
-const KINDS = ["skill", "plugin", "mcp"] as const;
-type Kind = (typeof KINDS)[number];
+appCommand
+  .command("slug")
+  .description("Print the canonical @author/name app slug from app.md (pipeable)")
+  .argument("[path]", "Path to app.md", "./app.md")
+  .action(async (path: string) => {
+    const abs = resolve(process.cwd(), path);
+    const result = await loadManifest(abs);
+    if (!result.ok) {
+      for (const err of result.errors) {
+        console.error(chalk.red(`✗ ${err.path}: ${err.message}`));
+      }
+      process.exit(1);
+    }
+    // Plain stdout, no colour, no trailing context — safe for `$(chest-gate app slug)`.
+    process.stdout.write(toAppSlug(result.manifest) + "\n");
+  });
 
 interface PublishManifest {
   slug: string;
   name: string;
-  kind: Kind;
+  kind: AppKind;
   tagline: string;
   description?: string | null;
   readme?: string | null;
@@ -84,13 +105,45 @@ function canonicalizeEndpointsCsv(input: string): string {
   ).join(",");
 }
 
+/** Build a publish-shaped manifest from an app.md `AppManifest`. */
+function publishFromAppMd(m: AppManifest): { ok: true; value: PublishManifest } | { ok: false; error: string } {
+  if (!m.endpoints || m.endpoints.length === 0) {
+    return {
+      ok: false,
+      error:
+        "app.md is missing the `endpoints` field (array of single-component gate slugs). " +
+        "Add e.g. `endpoints: [smoke-1234, gate-foo]` to publish, or pass --manifest with a JSON file.",
+    };
+  }
+  const tagline = (m.tagline ?? m.description).trim();
+  return {
+    ok: true,
+    value: {
+      slug: m.name,
+      name: m.displayName ?? m.name,
+      kind: m.kind ?? "skill",
+      tagline,
+      description: m.description.trim().length > 0 && m.description.trim() !== tagline ? m.description.trim() : null,
+      readme: m.body && m.body.trim().length > 0 ? m.body : null,
+      endpointsCsv: m.endpoints.join(","),
+      version: m.version,
+      sourceUrl: m.repository ?? null,
+      homepageUrl: m.homepage ?? null,
+      installJson: m.installJson ?? null,
+    },
+  };
+}
+
 const DEFAULT_SERVER = process.env.CHEST_SERVER || "https://gate.chest.sh";
 const DASHBOARD_BASE = process.env.CHEST_DASHBOARD || "https://chest.sh";
 
 appCommand
   .command("publish")
-  .description("Publish an app to the chest.sh registry (signed with ~/.chest/wallet.json)")
-  .requiredOption("-m, --manifest <path>", "Path to a JSON manifest with the app fields (see below)")
+  .description("Publish an app to the chest.sh registry (defaults to ./app.md, signed with ~/.chest/wallet.json)")
+  .option(
+    "-m, --manifest <path>",
+    "Path to a publish-shaped JSON manifest. If omitted, reads ./app.md (recommended).",
+  )
   .option("--server <url>", "chest.sh API origin", DEFAULT_SERVER)
   .option(
     "--wallet-key <path>",
@@ -102,45 +155,76 @@ appCommand
   .addHelpText(
     "after",
     `
-Manifest JSON shape (file passed via --manifest):
+Recommended: keep one source of truth in app.md and run \`chest-gate app publish\`
+from the repo root. The CLI parses frontmatter, derives the slug from
+\`@author/name\`, and pulls description/readme/links automatically.
 
-  {
-    "slug": "my-skill",                 // ^[a-z0-9][a-z0-9-]{1,63}$
-    "name": "My Skill",
-    "kind": "skill",                    // "skill" | "plugin" | "mcp"
-    "tagline": "One-line summary",
-    "description": null,                // long form, optional
-    "readme": "# My Skill\\n...",        // markdown, optional
-    "endpointsCsv": "smoke-1234,gate-foo", // comma-separated GATE slugs
-    "version": "0.1.0",
-    "sourceUrl": "https://github.com/me/my-skill",
-    "homepageUrl": null,
-    "installJson": { ... }              // any JSON, optional
-  }
+Required app.md fields for publish:
+  - name, author, version, description, capabilityTags  (already required)
+  - endpoints: [smoke-1234, gate-foo]   (single-component gate slugs the app pays)
+
+Optional app.md fields used at publish time:
+  - kind: skill | plugin | mcp          (default "skill")
+  - displayName: "My Skill"             (defaults to \`name\`)
+  - tagline: "One-line summary ≤120ch"  (defaults to \`description\`)
+  - homepage, repository                (mapped to homepageUrl/sourceUrl)
+  - installJson: { ... }                (any JSON shipped to consumers)
+
+Escape hatch: pass --manifest <file.json> with the legacy publish shape
+(slug, name, kind, tagline, description, readme, endpointsCsv, version,
+sourceUrl, homepageUrl, installJson). Useful for non-Markdown sources.
 
 The author wallet (~/.chest/wallet.json by default) signs the canonical
 message "chest-app/v4:{author}:{slug}:{manifestHash}:{version}:{windowTs}"
 and the server binds the slug to that pubkey on first publish.
 `,
   )
-  .action(async (opts: { manifest: string; server: string; walletKey?: string; dryRun?: boolean }) => {
+  .action(async (opts: { manifest?: string; server: string; walletKey?: string; dryRun?: boolean }) => {
     console.log(chalk.bold("\n  ⚡ Chest App Publish\n"));
 
-    const manifestPath = resolve(process.cwd(), opts.manifest);
-    let raw: string;
-    try {
-      raw = await readFile(manifestPath, "utf-8");
-    } catch (err) {
-      console.error(chalk.red(`  Error: cannot read ${opts.manifest}: ${(err as Error).message}`));
-      process.exit(1);
-    }
-
     let parsed: PublishManifest;
-    try {
-      parsed = JSON.parse(raw) as PublishManifest;
-    } catch (err) {
-      console.error(chalk.red(`  Error: ${opts.manifest} is not valid JSON: ${(err as Error).message}`));
-      process.exit(1);
+
+    if (opts.manifest) {
+      const manifestPath = resolve(process.cwd(), opts.manifest);
+      let raw: string;
+      try {
+        raw = await readFile(manifestPath, "utf-8");
+      } catch (err) {
+        console.error(chalk.red(`  Error: cannot read ${opts.manifest}: ${(err as Error).message}`));
+        process.exit(1);
+      }
+      try {
+        parsed = JSON.parse(raw) as PublishManifest;
+      } catch (err) {
+        console.error(chalk.red(`  Error: ${opts.manifest} is not valid JSON: ${(err as Error).message}`));
+        process.exit(1);
+      }
+    } else {
+      const appMdPath = resolve(process.cwd(), "app.md");
+      if (!existsSync(appMdPath)) {
+        console.error(chalk.red("  Error: no ./app.md found in the current directory."));
+        console.error(
+          chalk.gray("  Either run from the directory containing app.md, or pass --manifest <file.json>."),
+        );
+        process.exit(1);
+      }
+      const result = await loadManifest(appMdPath);
+      if (!result.ok) {
+        console.error(chalk.red("  app.md failed validation:"));
+        for (const err of result.errors) {
+          console.error(chalk.gray("  · ") + chalk.yellow(err.path) + chalk.gray(", ") + err.message);
+        }
+        process.exit(1);
+      }
+      const built = publishFromAppMd(result.manifest);
+      if (!built.ok) {
+        console.error(chalk.red("  Cannot derive a publish manifest from app.md:"));
+        console.error(chalk.gray("  · ") + built.error);
+        process.exit(1);
+      }
+      parsed = built.value;
+      console.log(chalk.gray("  Source:         ") + chalk.gray("./app.md"));
+      console.log(chalk.gray("  appSlug:        ") + chalk.cyan(toAppSlug(result.manifest)));
     }
 
     const errs: string[] = [];
@@ -148,8 +232,8 @@ and the server binds the slug to that pubkey on first publish.
       errs.push("slug must match ^[a-z0-9][a-z0-9-]{1,63}$");
     }
     if (typeof parsed.name !== "string" || !parsed.name.trim()) errs.push("name is required");
-    if (!(KINDS as readonly string[]).includes(parsed.kind)) {
-      errs.push(`kind must be one of: ${KINDS.join(", ")}`);
+    if (!(APP_KINDS as readonly string[]).includes(parsed.kind)) {
+      errs.push(`kind must be one of: ${APP_KINDS.join(", ")}`);
     }
     if (typeof parsed.tagline !== "string" || !parsed.tagline.trim()) errs.push("tagline is required");
     if (typeof parsed.endpointsCsv !== "string" || !parsed.endpointsCsv.trim()) {

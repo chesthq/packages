@@ -29,6 +29,9 @@ export const CAPABILITY_TAGS = [
 
 export type CapabilityTag = (typeof CAPABILITY_TAGS)[number];
 
+export const APP_KINDS = ["skill", "plugin", "mcp"] as const;
+export type AppKind = (typeof APP_KINDS)[number];
+
 export interface AppManifest {
   /** kebab-case slug, [a-z0-9-]+, max 64 chars. Identifier within the author's namespace. */
   name: string;
@@ -50,6 +53,25 @@ export interface AppManifest {
   license?: string;
   /** Markdown body (everything below the frontmatter `---` delimiter). */
   body: string;
+  /** App kind for the registry. Defaults to "skill" at publish time. */
+  kind?: AppKind;
+  /** Single-component gate slugs the app pays (registry-side endpoints). */
+  endpoints?: string[];
+  /** Optional human-readable name for the registry listing. Defaults to `name`. */
+  displayName?: string;
+  /** Optional short tagline ≤120 chars. Defaults to `description`. */
+  tagline?: string;
+  /** Optional install/config blob shipped to consumers. */
+  installJson?: unknown;
+}
+
+/**
+ * Canonical `@author/name` slug used by the SDK's `appSlug` option and the
+ * `x-chest-app` header. Every authored App has exactly one — derived
+ * deterministically from the manifest, never hand-typed.
+ */
+export function toAppSlug(m: Pick<AppManifest, "name" | "author">): string {
+  return `${m.author}/${m.name}`;
 }
 
 export interface ManifestValidationError {
@@ -61,6 +83,7 @@ export interface ManifestValidationError {
 const NAME_PATTERN = /^[a-z0-9-]+$/;
 const AUTHOR_PATTERN = /^@[a-z0-9-]+$/;
 const SLUG_PATTERN = /^@[a-z0-9-]+\/[a-z0-9-]+$/;
+const ENDPOINT_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/;
 const HTTPS_PATTERN = /^https:\/\/[^\s]+$/;
 
@@ -198,6 +221,50 @@ export function parseManifest(
     }
   }
 
+  // kind (optional)
+  if (data.kind !== undefined && data.kind !== null) {
+    if (typeof data.kind !== "string" || !(APP_KINDS as readonly string[]).includes(data.kind)) {
+      errors.push({
+        path: "kind",
+        message: `'${String(data.kind)}' must be one of ${APP_KINDS.join(", ")}`,
+      });
+    }
+  }
+
+  // endpoints (optional)
+  if (data.endpoints !== undefined && data.endpoints !== null) {
+    if (!Array.isArray(data.endpoints)) {
+      errors.push({ path: "endpoints", message: "must be an array of gate slugs" });
+    } else {
+      data.endpoints.forEach((e, i) => {
+        if (typeof e !== "string" || !ENDPOINT_PATTERN.test(e)) {
+          errors.push({
+            path: `endpoints[${i}]`,
+            message: `'${String(e)}' must match ^[a-z0-9][a-z0-9-]{1,63}$ (single-component gate slug)`,
+          });
+        }
+      });
+    }
+  }
+
+  // displayName (optional)
+  if (data.displayName !== undefined && data.displayName !== null) {
+    if (typeof data.displayName !== "string" || data.displayName.trim().length === 0) {
+      errors.push({ path: "displayName", message: "must be a non-empty string" });
+    } else if (data.displayName.length > 120) {
+      errors.push({ path: "displayName", message: `${data.displayName.length} chars > 120 max` });
+    }
+  }
+
+  // tagline (optional, ≤120 chars — shorter than description)
+  if (data.tagline !== undefined && data.tagline !== null) {
+    if (typeof data.tagline !== "string" || data.tagline.trim().length === 0) {
+      errors.push({ path: "tagline", message: "must be a non-empty string" });
+    } else if (data.tagline.length > 120) {
+      errors.push({ path: "tagline", message: `${data.tagline.length} chars > 120 max` });
+    }
+  }
+
   if (errors.length > 0) return { ok: false, errors };
 
   return {
@@ -213,6 +280,11 @@ export function parseManifest(
       repository: data.repository ? (data.repository as string) : undefined,
       license: data.license ? (data.license as string) : undefined,
       body: parsed.content,
+      kind: data.kind ? (data.kind as AppKind) : undefined,
+      endpoints: data.endpoints ? (data.endpoints as string[]) : undefined,
+      displayName: data.displayName ? (data.displayName as string) : undefined,
+      tagline: data.tagline ? (data.tagline as string) : undefined,
+      installJson: data.installJson ?? undefined,
     },
   };
 }

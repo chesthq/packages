@@ -28,13 +28,20 @@
  * cut to the app's registered author wallet. Authors register an app once
  * on chest.sh, no key needs to ship in skill source. Pass `referrerWallet`
  * to override.
+ *
+ * Auto-discovery: if `appSlug` is not provided, the SDK falls back to
+ * `process.env.CHEST_APP_SLUG`, then to the nearest `app.md` walking up
+ * from `cwd` (Node only). Set `CHEST_APP_SLUG_DISABLE=1` to opt out of
+ * filesystem discovery.
  */
 
 import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveAppSlug } from "./app-slug.js";
 
 export type { RequestEvent, SettledEvent } from "./hooks.js";
+export { resolveAppSlug } from "./app-slug.js";
 
 const DEFAULT_CHEST_API = "https://gate.chest.sh";
 
@@ -103,6 +110,8 @@ export async function paidFetch(
   opts: PaidFetchOptions = {},
 ): Promise<PaidFetchResult> {
   const mode = resolveMode(opts);
+  const appSlug = resolveAppSlug(opts.appSlug);
+  const effectiveOpts: PaidFetchOptions = appSlug === opts.appSlug ? opts : { ...opts, appSlug };
 
   const initHeaders = new Headers(opts.init?.headers ?? {});
   if (opts.referrerWallet) {
@@ -120,10 +129,10 @@ export async function paidFetch(
 
   const sign =
     mode === "api-key"
-      ? signWithApiKey(paymentRequired, url, opts)
+      ? signWithApiKey(paymentRequired, url, effectiveOpts)
       : mode === "privy"
-        ? signWithChestApi(paymentRequired, url, opts)
-        : signWithLocalKeypair(paymentRequired, opts);
+        ? signWithChestApi(paymentRequired, url, effectiveOpts)
+        : signWithLocalKeypair(paymentRequired, effectiveOpts);
 
   const { xPayment, payer } = await sign;
 
@@ -134,8 +143,8 @@ export async function paidFetch(
   // from its own apps registry, so no key needs to ship in source. Skipped
   // when the caller passed an explicit referrerWallet (explicit beats
   // implicit, same precedence as the agent-fetch path).
-  if (opts.appSlug && !opts.referrerWallet) {
-    paidHeaders.set("x-chest-app", opts.appSlug);
+  if (appSlug && !opts.referrerWallet) {
+    paidHeaders.set("x-chest-app", appSlug);
   }
 
   const paidRes = await fetch(url, { ...opts.init, headers: paidHeaders });

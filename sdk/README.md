@@ -60,7 +60,7 @@ type PaidFetchOptions = {
   init?: RequestInit;          // forwarded to fetch() for the initial request
   mode?: "api-key" | "local" | "auto";
   apiKey?: string;             // ca_live_…, overrides file-based modes
-  appSlug?: string;            // @author/app-name, analytics + referrer resolution
+  appSlug?: string;            // @author/app-name; if omitted, resolved from CHEST_APP_SLUG env or local app.md
   referrerWallet?: string;     // explicit referrer; overrides manifest resolution
   chestApi?: string;           // override https://gate.chest.sh
   keypairFile?: string;        // override ~/.chest/agent.json (local mode)
@@ -86,7 +86,22 @@ type PaidFetchResult = {
 
 Pass `appSlug: "@alice/market-read"` when you're calling a gate on behalf of a registered App (Claude skill, MCP server, agent integration). The server logs it today and resolves the **referrer wallet** from the App's manifest, so the App's author earns a referral split on every paid call routed through their integration.
 
-Want to route a referral split immediately? Pass `referrerWallet` explicitly.
+You usually don't need to pass it explicitly. The SDK resolves `appSlug` in this order:
+
+1. `appSlug` option in code — caller wins.
+2. `CHEST_APP_SLUG` env var — production-friendly, works in any runtime.
+3. Nearest `app.md` walking up from `cwd` — Node only, memoised, capped at 6 levels.
+
+So in development, dropping a valid `app.md` next to your code is enough — the slug attaches itself to every `paidFetch` call. Set `CHEST_APP_SLUG_DISABLE=1` to opt out of filesystem discovery (e.g. running multiple unrelated apps from the same tree).
+
+Get the canonical slug for an `app.md` with the CLI:
+
+```bash
+chest-gate app slug              # prints @author/name
+export CHEST_APP_SLUG=$(chest-gate app slug)
+```
+
+Want to route a referral split immediately? Pass `referrerWallet` explicitly — it overrides `appSlug` resolution.
 
 ## Hook event types
 
