@@ -2,9 +2,11 @@
   "name": "chesthq-packages",
   "version": "0.0.0",
   "private": true,
-  "description": "Public npm packages for Chest Gate — sdk, mcp, install, upstream-proxy.",
+  "description": "Public npm packages for Chest Gate — sdk, proxy, cli, mcp, install, upstream-proxy.",
   "workspaces": [
     "sdk",
+    "proxy",
+    "cli",
     "mcp",
     "install",
     "upstream-proxy"
@@ -12,6 +14,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "release:sdk": "npm run build --workspace=sdk && npm publish --workspace=sdk --access public",
+    "release:proxy": "npm run build --workspace=proxy && npm publish --workspace=proxy --access public",
+    "release:cli": "npm run build --workspace=cli && npm publish --workspace=cli --access public",
     "release:mcp": "npm run build --workspace=mcp && npm publish --workspace=mcp --access public",
     "release:install": "npm run build --workspace=install && npm publish --workspace=install --access public",
     "release:upstream-proxy": "npm run build --workspace=upstream-proxy && npm publish --workspace=upstream-proxy --access public"

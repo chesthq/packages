@@ -1,0 +1,16 @@
+# Chest Gate Configuration — generated 2026-04-19
+#
+# payoutWallet receives USDC. Deployer is your local key at
+# ~/.chest/wallet.json (see: chest keypair). They can differ.
+
+name: market-data
+upstream: http://localhost:8004
+payoutWallet: HndLQmUiUzi6mn1BHUrMWuNKzagvPfPQSkXFm6tC7wev
+network: devnet
+port: 4004
+freebie: 1
+price: $0.01
+session: 300
+# Revenue split — only active after `chest deploy` (on-chain).
+split:
+  referrer: 10
