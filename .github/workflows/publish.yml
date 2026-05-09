@@ -3,6 +3,8 @@ name: Publish
 # Tag-triggered npm publish. Tag pattern: <package-folder>-v<version>
 #   sdk-v0.2.2             → publishes ./sdk @ 0.2.2 to @chest-gate/sdk
 #   mcp-v0.2.2             → publishes ./mcp @ 0.2.2 to @chest-gate/mcp
+#   cli-v0.3.0             → publishes ./cli @ 0.3.0 to @chest-gate/cli
+#   proxy-v0.1.0           → publishes ./proxy @ 0.1.0 to @chest-gate/proxy
 #   install-v0.1.2         → publishes ./install @ 0.1.2 to @chest-gate/install
 #   upstream-proxy-v0.1.2  → publishes ./upstream-proxy @ 0.1.2 to @chest-gate/upstream-proxy
 #
@@ -15,6 +17,8 @@ on:
     tags:
       - "sdk-v*"
       - "mcp-v*"
+      - "cli-v*"
+      - "proxy-v*"
       - "install-v*"
       - "upstream-proxy-v*"
 
