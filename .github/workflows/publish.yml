@@ -33,10 +33,12 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      # Trusted Publisher (OIDC) requires npm 11.5.1+. Node 22 ships an
-      # older npm; upgrade before any publish work.
-      - name: Upgrade npm for OIDC publishing
-        run: npm install -g npm@latest
+      # Trusted Publisher (OIDC) requires npm 11.5.1+. Node 22 ships npm
+      # 10.x. Pin to a known-good version rather than `npm@latest` — a bad
+      # self-upgrade (e.g. 11.14.x missing `promise-retry`) breaks all
+      # publishes until it's fixed upstream. Bump deliberately when needed.
+      - name: Install pinned npm for OIDC publishing
+        run: npm install -g npm@11.5.1
 
       - name: Parse tag
         id: parse
