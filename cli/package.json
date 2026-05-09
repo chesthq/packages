@@ -1,0 +1,58 @@
+{
+  "name": "@chest-gate/cli",
+  "version": "0.1.0",
+  "description": "Chest Gate CLI. One command to monetise any API with x402 on Solana.",
+  "keywords": [
+    "x402",
+    "solana",
+    "cli",
+    "chest-gate",
+    "monetization",
+    "usdc",
+    "agent"
+  ],
+  "homepage": "https://chest.sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chesthq/packages.git",
+    "directory": "cli"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "chest-gate": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@chest-gate/proxy": "^0.1.0",
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/kit": "^5.5.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "bip39": "^3.1.0",
+    "chalk": "^5.4.0",
+    "commander": "^13.0.0",
+    "ed25519-hd-key": "^1.3.0",
+    "gray-matter": "^4.0.3",
+    "inquirer": "^12.0.0",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
