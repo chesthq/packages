@@ -8,6 +8,9 @@ import { statusCommand } from "./commands/status.js";
 import { keypairCommand } from "./commands/keypair.js";
 import { splitCommand } from "./commands/split.js";
 import { appCommand } from "./commands/app.js";
+import { loginCommand } from "./commands/login.js";
+import { logoutCommand } from "./commands/logout.js";
+import { whoamiCommand } from "./commands/whoami.js";
 
 const program = new Command();
 
@@ -23,5 +26,8 @@ program.addCommand(statusCommand);
 program.addCommand(keypairCommand);
 program.addCommand(splitCommand);
 program.addCommand(appCommand);
+program.addCommand(loginCommand);
+program.addCommand(logoutCommand);
+program.addCommand(whoamiCommand);
 
 program.parse();
