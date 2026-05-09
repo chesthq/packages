@@ -17,7 +17,7 @@ const program = new Command();
 program
   .name("chest-gate")
   .description("One command to monetise any API with x402 on Solana")
-  .version("0.2.0");
+  .version("0.4.0");
 
 program.addCommand(gateCommand);
 program.addCommand(deployCommand);
