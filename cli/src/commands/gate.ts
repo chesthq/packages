@@ -3,6 +3,9 @@ import chalk from "chalk";
 import { createProxy } from "@chest-gate/proxy";
 import { loadConfig } from "../config.js";
 import { ensureKeypair } from "../keypair.js";
+import { runManageAction } from "../manage.js";
+
+const DEFAULT_SERVER = process.env.CHEST_SERVER || "https://gate.chest.sh";
 
 export const gateCommand = new Command("gate")
   .description("Start the x402 payment proxy in front of your API")
@@ -133,3 +136,35 @@ export const gateCommand = new Command("gate")
       process.exit(0);
     });
   });
+
+gateCommand
+  .command("archive")
+  .description("Archive a deployed gate (soft-delete; hides from listings).")
+  .argument("<slug>", "Gate slug to archive")
+  .option("--server <url>", "chest.sh API origin", DEFAULT_SERVER)
+  .option("--wallet-key <path>", "Path to keypair JSON. Defaults to ~/.chest/wallet.json.")
+  .action(async (slug: string, opts: { server: string; walletKey?: string }) => {
+    console.log(chalk.bold("\n  ⚡ Chest Gate Archive\n"));
+    await runManageAction({ kind: "gate", op: "archive", slug, server: opts.server, walletKey: opts.walletKey });
+  });
+
+gateCommand
+  .command("unlist")
+  .description("Toggle the unlisted flag on a deployed gate (use --relist to undo).")
+  .argument("<slug>", "Gate slug")
+  .option("--relist", "Re-list (clears the unlisted flag)")
+  .option("--server <url>", "chest.sh API origin", DEFAULT_SERVER)
+  .option("--wallet-key <path>", "Path to keypair JSON. Defaults to ~/.chest/wallet.json.")
+  .action(
+    async (slug: string, opts: { relist?: boolean; server: string; walletKey?: string }) => {
+      console.log(chalk.bold("\n  ⚡ Chest Gate Unlist\n"));
+      await runManageAction({
+        kind: "gate",
+        op: "unlist",
+        slug,
+        server: opts.server,
+        walletKey: opts.walletKey,
+        unlisted: !opts.relist,
+      });
+    },
+  );

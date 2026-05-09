@@ -10,6 +10,7 @@ import {
 } from "@chest-gate/proxy";
 import { loadManifest } from "../manifest.js";
 import { ensureKeypair } from "../keypair.js";
+import { runManageAction } from "../manage.js";
 
 export const appCommand = new Command("app").description(
   "Manage Chest Gate App manifests and publish them to the chest.sh registry",
@@ -266,3 +267,35 @@ and the server binds the slug to that pubkey on first publish.
       process.exit(1);
     }
   });
+
+appCommand
+  .command("archive")
+  .description("Archive a published app (soft-delete; hides from listings).")
+  .argument("<slug>", "App slug to archive")
+  .option("--server <url>", "chest.sh API origin", DEFAULT_SERVER)
+  .option("--wallet-key <path>", "Path to keypair JSON. Defaults to ~/.chest/wallet.json.")
+  .action(async (slug: string, opts: { server: string; walletKey?: string }) => {
+    console.log(chalk.bold("\n  ⚡ Chest App Archive\n"));
+    await runManageAction({ kind: "app", op: "archive", slug, server: opts.server, walletKey: opts.walletKey });
+  });
+
+appCommand
+  .command("unlist")
+  .description("Toggle the unlisted flag on a published app (use --relist to undo).")
+  .argument("<slug>", "App slug")
+  .option("--relist", "Re-list (clears the unlisted flag)")
+  .option("--server <url>", "chest.sh API origin", DEFAULT_SERVER)
+  .option("--wallet-key <path>", "Path to keypair JSON. Defaults to ~/.chest/wallet.json.")
+  .action(
+    async (slug: string, opts: { relist?: boolean; server: string; walletKey?: string }) => {
+      console.log(chalk.bold("\n  ⚡ Chest App Unlist\n"));
+      await runManageAction({
+        kind: "app",
+        op: "unlist",
+        slug,
+        server: opts.server,
+        walletKey: opts.walletKey,
+        unlisted: !opts.relist,
+      });
+    },
+  );
