@@ -85,9 +85,26 @@ jobs:
       - if: steps.skip.outputs.skip != 'true'
         run: npm ci --ignore-scripts
 
+      # Workspace deps need their dist/ before tsc on the target can
+      # resolve their type declarations. The chain is sdk → proxy → cli,
+      # so for cli/proxy we build the upstreams first. Other folders are
+      # leaves and only need themselves.
       - if: steps.skip.outputs.skip != 'true'
-        name: Build
-        run: npm run build --workspace=${{ steps.parse.outputs.folder }}
+        name: Build (target + workspace deps in topological order)
+        env:
+          TARGET: ${{ steps.parse.outputs.folder }}
+        run: |
+          case "$TARGET" in
+            cli)
+              npm run build --workspace=sdk --workspace=proxy --workspace=cli
+              ;;
+            proxy)
+              npm run build --workspace=sdk --workspace=proxy
+              ;;
+            *)
+              npm run build --workspace="$TARGET"
+              ;;
+          esac
 
       # Auth handled by npm Trusted Publisher (OIDC). The id-token: write
       # permission above lets the npm CLI exchange the GitHub-issued OIDC
