@@ -25,7 +25,7 @@ npx -y @chest-gate/install trading-decision
 2. **Fetch.** Shallow-clones the source repo (parsed from the manifest's GitHub `tree` URL) into a temp directory.
 3. **Install.** Copies the skill subpath into `~/.claude/skills/<name>` (folder name read from `SKILL.md` frontmatter, falling back to the source folder).
 4. **Bootstrap.** Runs `npm install` if the skill ships a `package.json`.
-5. **Auth.** Prompts you to paste a Chest agent token (a `ca_live_…` value or full JSON), saves it to `~/.chest/auth.json` with `0600` perms. Skipped if `CHEST_API_KEY` is set or the file already exists.
+5. **Auth.** Prompts you to paste a Chest agent token (a `ca_live_…` value or full JSON), saves it to `~/.chest/agent-token.json` with `0600` perms. Skipped if `CHEST_API_KEY` is set or the file already exists. (Legacy `~/.chest/auth.json` is still recognised.)
 6. **Done.** Prints the App's `next steps` block.
 
 ## Environment
