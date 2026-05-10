@@ -23,6 +23,7 @@ chest-gate --help
 | --- | --- |
 | `chest-gate init` | Generate `chest.config.yaml` interactively, also creates `~/.chest/wallet.json` if missing |
 | `chest-gate keypair [--show-mnemonic]` | Show or generate the deployer wallet at `~/.chest/wallet.json` |
+| `chest-gate install <slug> [--force\|--upgrade]` | Install a published app (skill) into `~/.claude/skills/`. Shells out to `npx @chest-gate/install`. |
 | `chest-gate upgrade [--pm npm\|pnpm\|yarn\|bun] [--check]` | Upgrade to the latest CLI from npm |
 
 ### Run & deploy
