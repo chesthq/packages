@@ -1,21 +1,22 @@
 /**
  * @chest-gate/sdk, pay x402 gates from any agent.
  *
- * Two credential modes, both behind the same `paidFetch(url, opts)` API:
+ * Three credential modes, all behind the same `paidFetch(url, opts)` API:
  *
  * - **api-key** (recommended for deployed agents): pass a Chest API key via
  *   the `apiKey` option or `CHEST_API_KEY` env var. Signing happens
  *   server-side via a Privy-managed wallet bound to the key. No browser, no
  *   keypair on disk. Mint keys at https://chest.sh/app/keys.
  *
+ * - **privy** (interactive sessions): a token JSON at
+ *   `~/.chest/agent-token.json` (`{ version, token, apiUrl? }`). Signing
+ *   happens server-side via the user's Privy-managed wallet. Mint tokens at
+ *   https://chest.sh/dashboard/keys.
+ *
  * - **local** (self-custody fallback): a Solana secret-key JSON file at
  *   `~/.chest/agent-keypair.json`. Signing happens locally; chest.sh is not
  *   in the path. Required when chest.sh is unreachable or the caller wants
  *   to hold their own keys.
- *
- * A third file-based flow (token at `~/.chest/agent-token.json`) is reserved
- * for an upcoming `chest login` CLI command. Until that ships, use api-key
- * mode for both deployed agents and local development.
  *
  * Legacy file names (`~/.chest/auth.json`, `~/.chest/agent.json`) are still
  * read with a deprecation warning; rename when convenient.
@@ -23,8 +24,9 @@
  * Mode auto-detect (when `mode` is unset or `"auto"`):
  *   1. `apiKey` option provided                → api-key
  *   2. `CHEST_API_KEY` env set                 → api-key
- *   3. `~/.chest/agent-keypair.json` exists    → local
- *   4. throw with a helpful message
+ *   3. `~/.chest/agent-token.json` exists      → privy
+ *   4. `~/.chest/agent-keypair.json` exists    → local
+ *   5. throw with a helpful message
  *
  * `appSlug` (optional): declare which App is calling. Forwarded as
  * `x-chest-app` on the paid request — the gate attributes the referrer
