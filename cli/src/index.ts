@@ -11,13 +11,14 @@ import { appCommand } from "./commands/app.js";
 import { loginCommand } from "./commands/login.js";
 import { logoutCommand } from "./commands/logout.js";
 import { whoamiCommand } from "./commands/whoami.js";
+import { upgradeCommand } from "./commands/upgrade.js";
 
 const program = new Command();
 
 program
   .name("chest-gate")
   .description("One command to monetise any API with x402 on Solana")
-  .version("0.4.0");
+  .version("0.5.0");
 
 program.addCommand(gateCommand);
 program.addCommand(deployCommand);
@@ -29,5 +30,6 @@ program.addCommand(appCommand);
 program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
 program.addCommand(whoamiCommand);
+program.addCommand(upgradeCommand);
 
 program.parse();

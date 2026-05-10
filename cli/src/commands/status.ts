@@ -4,13 +4,17 @@ import { TransactionStore } from "@chest-gate/proxy";
 
 export const statusCommand = new Command("status")
   .description("Show proxy status and revenue summary")
-  .action(async () => {
-    console.log(chalk.bold("\n  ⚡ Chest Status\n"));
-
+  .option("--json", "Emit machine-readable JSON instead of formatted text")
+  .action(async (opts: { json?: boolean }) => {
     let store: TransactionStore;
     try {
       store = new TransactionStore();
     } catch {
+      if (opts.json) {
+        process.stdout.write(JSON.stringify({ ok: false, error: "no-data" }) + "\n");
+        process.exit(1);
+      }
+      console.log(chalk.bold("\n  ⚡ Chest Status\n"));
       console.log(chalk.gray("  No transaction data found. Run `chest-gate gate` first.\n"));
       return;
     }
@@ -18,6 +22,12 @@ export const statusCommand = new Command("status")
     const stats = store.getStats();
     store.close();
 
+    if (opts.json) {
+      process.stdout.write(JSON.stringify({ ok: true, stats }) + "\n");
+      return;
+    }
+
+    console.log(chalk.bold("\n  ⚡ Chest Status\n"));
     console.log(chalk.white("  Revenue"));
     console.log(chalk.gray("  ─────────────────────────────────────────"));
     console.log(chalk.gray("  Total revenue:      ") + chalk.green(`$${stats.totalRevenue.toFixed(6)} USDC`));

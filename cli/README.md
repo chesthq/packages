@@ -17,15 +17,57 @@ chest-gate --help
 
 ## Commands
 
+### Setup
+
 | Command | What it does |
 | --- | --- |
-| `chest-gate init` | Generate `chest.config.yaml` for the current API |
-| `chest-gate keypair` | Create or import the deployer wallet at `~/.chest/wallet.json` |
+| `chest-gate init` | Generate `chest.config.yaml` interactively, also creates `~/.chest/wallet.json` if missing |
+| `chest-gate keypair [--show-mnemonic]` | Show or generate the deployer wallet at `~/.chest/wallet.json` |
+| `chest-gate upgrade [--pm npm\|pnpm\|yarn\|bun] [--check]` | Upgrade to the latest CLI from npm |
+
+### Run & deploy
+
+| Command | What it does |
+| --- | --- |
 | `chest-gate gate` | Run the local x402 reverse proxy against your config |
-| `chest-gate deploy` | Push the gate to chest.sh, sign the deploy on-chain |
-| `chest-gate status` | Show recent paid calls from the local transaction store |
-| `chest-gate split` | Inspect or update the on-chain revenue split (referrer cut) |
-| `chest-gate app` | Publish or update an app entry in the chest.sh registry |
+| `chest-gate deploy` | Push the gate to chest.sh, sign the deploy on-chain, init the splitter PDA if configured |
+| `chest-gate status [--json]` | Show recent paid calls from the local SQLite store written by `gate` |
+
+### Manage deployed gates
+
+Re-running `chest-gate deploy` updates an existing gate in place (the server upserts on slug + deployer signature). To hide or soft-delete:
+
+| Command | What it does |
+| --- | --- |
+| `chest-gate gate archive <slug>` | Archive a deployed gate (soft-delete; hides from listings) |
+| `chest-gate gate unlist <slug> [--relist]` | Toggle the unlisted flag on a deployed gate |
+
+### On-chain revenue split
+
+| Command | What it does |
+| --- | --- |
+| `chest-gate split info --slug <slug>` | Read the on-chain `SplitConfig` PDA |
+| `chest-gate split update --slug <slug> --referrer <pct>` | Update the referrer commission % (0–98.5) |
+
+### App registry (`app.md`)
+
+| Command | What it does |
+| --- | --- |
+| `chest-gate app validate [path]` | Validate an `app.md` manifest |
+| `chest-gate app slug [path]` | Print the canonical `@author/name` slug (pipeable) |
+| `chest-gate app publish [--dry-run]` | Publish to chest.sh, signed with `~/.chest/wallet.json` |
+| `chest-gate app archive <slug>` | Archive a published app |
+| `chest-gate app unlist <slug> [--relist]` | Toggle the unlisted flag on a published app |
+
+### Account (CLI token)
+
+The CLI token at `~/.chest/developer-token.json` (legacy: `credentials.json`) is consumed by `@chest-gate/install` and downstream tooling — not by the deploy/publish commands above, which sign with the wallet keypair.
+
+| Command | What it does |
+| --- | --- |
+| `chest-gate login [--no-browser] [--force]` | PKCE browser login, mints a CLI token |
+| `chest-gate logout [--keep-remote]` | Revoke the token server-side and delete local creds |
+| `chest-gate whoami [--json]` | Show the wallet and token currently signed in |
 
 ## Configure
 
@@ -44,11 +86,34 @@ split:
   referrer: 10
 ```
 
-`payoutWallet` receives the merchant cut. The deployer is the local wallet at `~/.chest/wallet.json`. They can differ.
+`payoutWallet` receives the merchant cut. The deployer is the local wallet at `~/.chest/wallet.json` (the same wallet that signs `deploy`, `app publish`, `gate archive`, etc.). They can differ.
+
+## Environment variables
+
+| Var | Used by |
+| --- | --- |
+| `CHEST_SERVER` | Default API origin (default `https://gate.chest.sh`) |
+| `CHEST_GATE_URL` | Default gate URL for `login`/`whoami` |
+| `CHEST_WEB_URL` | Default web URL for `login` (default `https://chest.sh`) |
+| `CHEST_DASHBOARD` | Dashboard origin printed in `app publish` (default `https://chest.sh`) |
+| `CHEST_TOKEN` | CLI token (overrides `~/.chest/developer-token.json`) |
+| `CHEST_WALLET_KEY` | Inline 64-byte JSON array of the deployer secret key (CI) |
+| `CHEST_WALLET_KEY_PATH` | Path to a Solana keypair JSON file |
+| `CHEST_USDC_MINT` | Override the USDC mint used by the splitter init |
+
+## Known gaps
+
+These features aren't implemented yet — they require server endpoints or program changes that live outside this package:
+
+- `chest-gate gate list` / `chest-gate app list` — no server endpoint to enumerate slugs by wallet.
+- `chest-gate gate inspect <slug>` / `gate logs <slug>` — same.
+- `split` rotate authority, change protocol wallet, close PDA — needs Anchor program changes.
+
+If you need any of these, please open an issue at <https://github.com/chesthq/packages/issues>.
 
 ## Documentation
 
-Full docs: https://chest.sh
+Full docs: <https://chest.sh>
 
 ## License
 
