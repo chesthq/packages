@@ -111,17 +111,27 @@ function runLoopbackFlow(args: LoopbackArgs): Promise<string> {
       if (settled) return;
       settled = true;
       try {
+        // close() stops accepting new connections; closeAllConnections()
+        // forcibly tears down any keep-alive sockets the browser left open
+        // so the parent process can exit immediately instead of waiting on
+        // Node's 5s keepAliveTimeout. Available since Node 18.2.
         server.close();
+        server.closeAllConnections?.();
       } catch {}
       clearTimeout(timer);
       if (err) reject(err);
       else if (code) resolve(code);
     };
 
+    // Connection: close on every response tells the browser to terminate
+    // the socket after the response, which keeps the loopback short-lived
+    // and helps the caller exit cleanly without dangling keep-alives.
+    const htmlHeaders = { "content-type": "text/html; charset=utf-8", "connection": "close" };
+
     const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url || "/", "http://127.0.0.1");
       if (url.pathname !== "/callback") {
-        res.writeHead(404, { "content-type": "text/plain" });
+        res.writeHead(404, { "content-type": "text/plain", "connection": "close" });
         res.end("not found");
         return;
       }
@@ -130,24 +140,24 @@ function runLoopbackFlow(args: LoopbackArgs): Promise<string> {
       const errorParam = url.searchParams.get("error");
 
       if (errorParam) {
-        res.writeHead(400, { "content-type": "text/html; charset=utf-8" });
+        res.writeHead(400, htmlHeaders);
         res.end(htmlPage("Login failed", errorParam, false));
         finish(new PkceLoginError("browser", `Browser returned error: ${errorParam}`));
         return;
       }
       if (!recvState || recvState !== args.state) {
-        res.writeHead(400, { "content-type": "text/html; charset=utf-8" });
+        res.writeHead(400, htmlHeaders);
         res.end(htmlPage("Invalid state", "State mismatch. Try again.", false));
         finish(new PkceLoginError("state", "State mismatch on callback (possible CSRF)."));
         return;
       }
       if (!code) {
-        res.writeHead(400, { "content-type": "text/html; charset=utf-8" });
+        res.writeHead(400, htmlHeaders);
         res.end(htmlPage("Missing code", "No authorization code on the callback.", false));
         finish(new PkceLoginError("missing-code", "Callback missing code parameter."));
         return;
       }
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.writeHead(200, htmlHeaders);
       res.end(htmlPage("You're signed in", "You can close this tab and return to the terminal.", true));
       finish(null, code);
     });
