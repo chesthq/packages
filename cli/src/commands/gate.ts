@@ -26,7 +26,6 @@ export const gateCommand = new Command("gate")
     "Session duration after payment (seconds, or e.g. 5m, 1h; 0 to disable). Defaults to chest.config.yaml `session:` or 5m."
   )
   .option("--config <path>", "Path to chest.config.yaml")
-  .option("--dashboard", "Launch local dashboard alongside proxy")
   .action(async (opts) => {
     console.log(chalk.bold("\n  ⚡ Chest Gate\n"));
 
@@ -35,6 +34,12 @@ export const gateCommand = new Command("gate")
 
     if (!config.wallet) {
       console.error(chalk.red("  Error: --payout-wallet is required (your Solana address to receive USDC)"));
+      process.exit(1);
+    }
+
+    if (config.wallet === "YOUR_SOLANA_WALLET_ADDRESS") {
+      console.error(chalk.red("  Error: payoutWallet is still the placeholder 'YOUR_SOLANA_WALLET_ADDRESS'."));
+      console.error(chalk.gray("  Edit chest.config.yaml and set it to your Solana address, or pass --payout-wallet."));
       process.exit(1);
     }
 

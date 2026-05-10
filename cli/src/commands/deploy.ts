@@ -138,6 +138,12 @@ export const deployCommand = new Command("deploy")
       process.exit(1);
     }
 
+    if (wallet === "YOUR_SOLANA_WALLET_ADDRESS") {
+      console.error(chalk.red("  Error: payoutWallet is still the placeholder 'YOUR_SOLANA_WALLET_ADDRESS'."));
+      console.error(chalk.gray("  Edit chest.config.yaml and set it to your Solana address, or pass --payout-wallet."));
+      process.exit(1);
+    }
+
     const server = opts.server;
 
     console.log(chalk.gray("  Deploying to Chest cloud...\n"));
