@@ -28,12 +28,14 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { runPkceLogin, PkceLoginError } from "@chest-gate/auth-flow";
 
-const VERSION = "0.2.1";
+const VERSION = "0.3.0";
 const DEFAULT_API = "https://gate.chest.sh";
+const DEFAULT_WEB = "https://chest.sh";
 const KEYS_URL = "https://chest.sh/app/keys";
 const TOKEN_FILE = join(homedir(), ".chest", "agent-token.json");
 const LEGACY_TOKEN_FILE = join(homedir(), ".chest", "auth.json");
@@ -72,6 +74,7 @@ const HELP_TEXT = [
   "",
   "Env:",
   "  CHEST_API      override registry (default: https://gate.chest.sh)",
+  "  CHEST_WEB      override chest.sh URL (default: https://chest.sh)",
   "  CHEST_HOME     override install root (default: ~/.claude/skills)",
   "  CHEST_API_KEY  ca_live_ token (skips interactive auth prompt)",
 ].join("\n");
@@ -183,6 +186,12 @@ function parseAuthInput(raw: string): TokenFile | null {
   return null;
 }
 
+function writeTokenFile(auth: TokenFile): void {
+  mkdirSync(join(homedir(), ".chest"), { recursive: true });
+  writeFileSync(TOKEN_FILE, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(TOKEN_FILE, 0o600);
+}
+
 async function promptForAuth(): Promise<void> {
   const envKey = process.env.CHEST_API_KEY;
   if (envKey && envKey.startsWith("ca_live_")) {
@@ -202,7 +211,62 @@ async function promptForAuth(): Promise<void> {
     return;
   }
 
-  console.log(`\n  Mint a key at ${KEYS_URL}`);
+  console.log();
+  console.log(`  This skill calls paid x402 gates. You need an agent token to pay them.`);
+  console.log(`    [1] Open chest.sh in a browser to authorize this device (recommended)`);
+  console.log(`    [2] Paste a ca_live_ key from ${KEYS_URL}`);
+  console.log(`    [3] Skip — set up later`);
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let choice: string;
+  try {
+    choice = (await rl.question("  > ")).trim();
+  } finally {
+    rl.close();
+  }
+
+  if (choice === "1" || choice === "" || choice.toLowerCase() === "y") {
+    await runBrowserLogin();
+    return;
+  }
+  if (choice === "2") {
+    await runPasteFlow();
+    return;
+  }
+  console.log(`  auth:    skipped — set up later by running \`chest-gate login\` or saving a key to ${TOKEN_FILE}`);
+}
+
+async function runBrowserLogin(): Promise<void> {
+  const webUrl = process.env.CHEST_WEB ?? DEFAULT_WEB;
+  const gateUrl = process.env.CHEST_API ?? DEFAULT_API;
+  try {
+    const result = await runPkceLogin({
+      webUrl,
+      gateUrl,
+      hostname: hostname() || "unknown",
+      onListen: ({ loginUrl }) => {
+        console.log();
+        console.log(`  Opening ${webUrl} in your browser to authorize this device…`);
+        console.log(`  If it doesn't open, visit:`);
+        console.log(`    ${loginUrl}`);
+      },
+    });
+    writeTokenFile({ version: 1, token: result.token, apiUrl: webUrl });
+    console.log();
+    console.log(`  ✓ Logged in as ${result.ownerWallet}`);
+    console.log(`    Token label: ${result.label}`);
+    console.log(`    Saved to:    ${TOKEN_FILE}`);
+  } catch (err) {
+    const message = err instanceof PkceLoginError ? err.message : err instanceof Error ? err.message : String(err);
+    console.log(`  auth:    browser sign-in failed (${message}).`);
+    console.log(`           Falling back to paste — you can also run \`chest-gate login\` later.`);
+    await runPasteFlow();
+  }
+}
+
+async function runPasteFlow(): Promise<void> {
+  console.log();
+  console.log(`  Mint a key at ${KEYS_URL}`);
   console.log(`  Paste the ca_live_ key or the full JSON below (Enter to skip).`);
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -225,9 +289,7 @@ async function promptForAuth(): Promise<void> {
     return;
   }
 
-  mkdirSync(join(homedir(), ".chest"), { recursive: true });
-  writeFileSync(TOKEN_FILE, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(TOKEN_FILE, 0o600);
+  writeTokenFile(auth);
   console.log(`  auth:    saved → ${TOKEN_FILE}`);
 }
 

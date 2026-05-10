@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/@chest-gate/install.svg)](https://www.npmjs.com/package/@chest-gate/install)
 [![license](https://img.shields.io/npm/l/@chest-gate/install.svg)](./LICENSE)
 
-> One-command installer for [Chest Gate](https://chest.sh) skills. Resolves a slug against the public registry, fetches the source from GitHub, drops it in the right runtime folder, runs `npm install`, and prompts for a Chest API key.
+> One-command installer for [Chest Gate](https://chest.sh) skills. Resolves a slug against the public registry, fetches the source from GitHub, drops it in the right runtime folder, runs `npm install`, and helps you sign in to Chest with a browser-confirm flow.
 
 ## Install + run
 
@@ -25,7 +25,12 @@ npx -y @chest-gate/install trading-decision
 2. **Fetch.** Shallow-clones the source repo (parsed from the manifest's GitHub `tree` URL) into a temp directory.
 3. **Install.** Copies the skill subpath into `~/.claude/skills/<name>` (folder name read from `SKILL.md` frontmatter, falling back to the source folder).
 4. **Bootstrap.** Runs `npm install` if the skill ships a `package.json`.
-5. **Auth.** Prompts you to paste a Chest agent token (a `ca_live_…` value or full JSON), saves it to `~/.chest/agent-token.json` with `0600` perms. Skipped if `CHEST_API_KEY` is set or the file already exists. (Legacy `~/.chest/auth.json` is still recognised.)
+5. **Auth.** Offers three options:
+   - **[1] Browser** — opens `chest.sh`, you confirm in your existing Privy session, the installer mints a per-device agent token via PKCE and saves it to `~/.chest/agent-token.json`. Same UX as `chest-gate login`.
+   - **[2] Paste** — paste a `ca_live_…` token from [chest.sh/app/keys](https://chest.sh/app/keys). Useful for headless installs where the browser flow can't open a window.
+   - **[3] Skip** — set up later by running `chest-gate login` or saving a key manually.
+
+   Skipped entirely if `CHEST_API_KEY` is set, the file already exists, or the shell isn't a TTY. Legacy `~/.chest/auth.json` is still recognised.
 6. **Done.** Prints the App's `next steps` block.
 
 ## Environment
@@ -33,6 +38,7 @@ npx -y @chest-gate/install trading-decision
 | Var | Default | Purpose |
 |---|---|---|
 | `CHEST_API` | `https://gate.chest.sh` | Override the registry endpoint. |
+| `CHEST_WEB` | `https://chest.sh` | Override the web URL used by the browser sign-in flow. |
 | `CHEST_HOME` | `~/.claude/skills` | Override the install root. Useful for testing or for non–Claude Code agents. |
 | `CHEST_API_KEY` | — | If set to a `ca_live_…` token, the post-install auth prompt is skipped. |
 
@@ -42,7 +48,7 @@ npx -y @chest-gate/install trading-decision
 - `git` on PATH (the installer shells out to `git clone`)
 - `npm` (only used if the skill ships a `package.json`)
 
-Zero runtime dependencies — uses only Node built-ins, `git`, and `npm`.
+Runtime dependency: [`@chest-gate/auth-flow`](https://www.npmjs.com/package/@chest-gate/auth-flow) for the browser sign-in flow. Otherwise just Node built-ins, `git`, and `npm`.
 
 ## Manifest contract
 

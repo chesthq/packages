@@ -7,6 +7,7 @@ name: Publish
 #   proxy-v0.1.0           → publishes ./proxy @ 0.1.0 to @chest-gate/proxy
 #   install-v0.1.2         → publishes ./install @ 0.1.2 to @chest-gate/install
 #   upstream-proxy-v0.1.2  → publishes ./upstream-proxy @ 0.1.2 to @chest-gate/upstream-proxy
+#   auth-flow-v0.1.0       → publishes ./auth-flow @ 0.1.0 to @chest-gate/auth-flow
 #
 # Bump the package's `version` in its own package.json first, merge to main,
 # then push the matching tag from main. The workflow refuses to publish if
@@ -21,6 +22,7 @@ on:
       - "proxy-v*"
       - "install-v*"
       - "upstream-proxy-v*"
+      - "auth-flow-v*"
 
 jobs:
   publish:
@@ -86,9 +88,11 @@ jobs:
         run: npm ci --ignore-scripts
 
       # Workspace deps need their dist/ before tsc on the target can
-      # resolve their type declarations. The chain is sdk → proxy → cli,
-      # so for cli/proxy we build the upstreams first. Other folders are
-      # leaves and only need themselves.
+      # resolve their type declarations. The chains are:
+      #   sdk → proxy → cli (cli also depends on auth-flow)
+      #   auth-flow → install
+      # so for cli/proxy/install we build the upstreams first. Other folders
+      # are leaves and only need themselves.
       - if: steps.skip.outputs.skip != 'true'
         name: Build (target + workspace deps in topological order)
         env:
@@ -96,10 +100,13 @@ jobs:
         run: |
           case "$TARGET" in
             cli)
-              npm run build --workspace=sdk --workspace=proxy --workspace=cli
+              npm run build --workspace=sdk --workspace=proxy --workspace=auth-flow --workspace=cli
               ;;
             proxy)
               npm run build --workspace=sdk --workspace=proxy
+              ;;
+            install)
+              npm run build --workspace=auth-flow --workspace=install
               ;;
             *)
               npm run build --workspace="$TARGET"
