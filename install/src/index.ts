@@ -33,7 +33,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { runPkceLogin, PkceLoginError } from "@chest-gate/auth-flow";
 
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 const DEFAULT_API = "https://gate.chest.sh";
 const DEFAULT_WEB = "https://chest.sh";
 const KEYS_URL = "https://chest.sh/app/keys";
