@@ -35,10 +35,13 @@ chest-gate --help
 
 ### Manage deployed gates
 
-Re-running `chest-gate deploy` updates an existing gate in place (the server upserts on slug + deployer signature). To hide or soft-delete:
+Re-running `chest-gate deploy` updates an existing gate in place (the server upserts on slug + deployer signature). The owner-scoped commands below all require `chest-gate login` first, the CLI token authenticates the request and the server checks that the token's wallet owns the slug.
 
 | Command | What it does |
 | --- | --- |
+| `chest-gate gate list [--json]` | List gates deployed by the wallet you're logged in as |
+| `chest-gate gate inspect <slug> [--json]` | Show the full owner view of a deployed gate (incl. payout wallet, full upstream, freebie) |
+| `chest-gate gate logs <slug> [--limit n] [--before id] [--json]` | Recent paid calls for a gate, cursor-paginated |
 | `chest-gate gate archive <slug>` | Archive a deployed gate (soft-delete; hides from listings) |
 | `chest-gate gate unlist <slug> [--relist]` | Toggle the unlisted flag on a deployed gate |
 
@@ -56,12 +59,14 @@ Re-running `chest-gate deploy` updates an existing gate in place (the server ups
 | `chest-gate app validate [path]` | Validate an `app.md` manifest |
 | `chest-gate app slug [path]` | Print the canonical `@author/name` slug (pipeable) |
 | `chest-gate app publish [--dry-run]` | Publish to chest.sh, signed with `~/.chest/wallet.json` |
+| `chest-gate app list [--limit n] [--offset n] [--json]` | List apps published by the wallet you're logged in as |
+| `chest-gate app inspect <slug> [--json]` | Show the full owner view of a published app |
 | `chest-gate app archive <slug>` | Archive a published app |
 | `chest-gate app unlist <slug> [--relist]` | Toggle the unlisted flag on a published app |
 
 ### Account (CLI token)
 
-The CLI token at `~/.chest/developer-token.json` (legacy: `credentials.json`) is consumed by `@chest-gate/install` and downstream tooling — not by the deploy/publish commands above, which sign with the wallet keypair.
+The CLI token at `~/.chest/developer-token.json` (legacy: `credentials.json`) authenticates the owner-scoped read/manage commands above (`gate list`/`inspect`/`logs`/`archive`/`unlist`, `app list`/`inspect`/`archive`/`unlist`). It's also consumed by `@chest-gate/install` and downstream tooling. Wallet-signing commands (`deploy`, `app publish`, `split update`) still use `~/.chest/wallet.json` directly.
 
 | Command | What it does |
 | --- | --- |
@@ -103,10 +108,6 @@ split:
 
 ## Known gaps
 
-These features aren't implemented yet — they require server endpoints or program changes that live outside this package:
-
-- `chest-gate gate list` / `chest-gate app list` — no server endpoint to enumerate slugs by wallet.
-- `chest-gate gate inspect <slug>` / `gate logs <slug>` — same.
 - `split` rotate authority, change protocol wallet, close PDA — needs Anchor program changes.
 
 If you need any of these, please open an issue at <https://github.com/chesthq/packages/issues>.

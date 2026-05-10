@@ -1,6 +1,6 @@
 {
   "name": "@chest-gate/cli",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Chest Gate CLI. One command to monetise any API with x402 on Solana.",
   "keywords": [
     "x402",
