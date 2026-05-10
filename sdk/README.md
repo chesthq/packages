@@ -40,7 +40,7 @@ Same `paidFetch(url, opts)` signature for both.
 | Mode | Where the credential lives | Best for |
 |---|---|---|
 | **`api-key`** | `apiKey` option or `CHEST_API_KEY` env | deployed agents, MCP servers, CI jobs |
-| **`local`** | `~/.chest/agent.json` (Solana secret-key JSON) | self-custody, offline-signed |
+| **`local`** | `~/.chest/agent-keypair.json` (Solana secret-key JSON) | self-custody, offline-signed |
 
 `api-key` mode posts the 402 challenge to `chest.sh/api/agent/sign` and signs server-side via a Privy-managed wallet. `local` mode signs locally; `chest.sh` is not in the path.
 
@@ -48,8 +48,10 @@ If `mode` is unset (or `"auto"`), the SDK picks in this order:
 
 1. `apiKey` option provided → `api-key`
 2. `CHEST_API_KEY` env set → `api-key`
-3. `~/.chest/agent.json` exists → `local`
+3. `~/.chest/agent-keypair.json` exists → `local`
 4. Throws with a helpful message
+
+Legacy file names (`~/.chest/auth.json` for the token, `~/.chest/agent.json` for the keypair) are still read with a deprecation warning; rename when convenient.
 
 You almost never need to pass `mode` explicitly.
 
@@ -63,7 +65,7 @@ type PaidFetchOptions = {
   appSlug?: string;            // @author/app-name; if omitted, resolved from CHEST_APP_SLUG env or local app.md
   referrerWallet?: string;     // explicit referrer; overrides manifest resolution
   chestApi?: string;           // override https://gate.chest.sh
-  keypairFile?: string;        // override ~/.chest/agent.json (local mode)
+  keypairFile?: string;        // override ~/.chest/agent-keypair.json (local mode)
 };
 ```
 

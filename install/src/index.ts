@@ -35,7 +35,8 @@ import { createInterface } from "node:readline/promises";
 const VERSION = "0.2.1";
 const DEFAULT_API = "https://gate.chest.sh";
 const KEYS_URL = "https://chest.sh/app/keys";
-const AUTH_FILE = join(homedir(), ".chest", "auth.json");
+const TOKEN_FILE = join(homedir(), ".chest", "agent-token.json");
+const LEGACY_TOKEN_FILE = join(homedir(), ".chest", "auth.json");
 
 type AppKind = "skill" | "plugin" | "mcp";
 
@@ -158,22 +159,23 @@ function showManifestAndExit(app: AppManifest, reason: string): never {
   process.exit(2);
 }
 
-interface AuthFile {
+interface TokenFile {
+  version: 1;
   token: string;
   apiUrl: string;
 }
 
-function parseAuthInput(raw: string): AuthFile | null {
+function parseAuthInput(raw: string): TokenFile | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith("ca_live_")) {
-    return { token: trimmed, apiUrl: "https://chest.sh" };
+    return { version: 1, token: trimmed, apiUrl: "https://chest.sh" };
   }
   try {
     const parsed = JSON.parse(trimmed) as { token?: unknown; apiUrl?: unknown };
     if (typeof parsed.token === "string" && parsed.token.startsWith("ca_live_")) {
       const apiUrl = typeof parsed.apiUrl === "string" ? parsed.apiUrl : "https://chest.sh";
-      return { token: parsed.token, apiUrl };
+      return { version: 1, token: parsed.token, apiUrl };
     }
   } catch {
     // not JSON
@@ -187,12 +189,16 @@ async function promptForAuth(): Promise<void> {
     console.log(`  auth:    using CHEST_API_KEY from env`);
     return;
   }
-  if (existsSync(AUTH_FILE)) {
-    console.log(`  auth:    ${AUTH_FILE} already exists — leaving it alone`);
+  if (existsSync(TOKEN_FILE)) {
+    console.log(`  auth:    ${TOKEN_FILE} already exists — leaving it alone`);
+    return;
+  }
+  if (existsSync(LEGACY_TOKEN_FILE)) {
+    console.log(`  auth:    ${LEGACY_TOKEN_FILE} exists (legacy name) — rename to ${TOKEN_FILE} when convenient`);
     return;
   }
   if (!process.stdin.isTTY) {
-    console.log(`  auth:    skipped (non-interactive). Mint at ${KEYS_URL} and save to ${AUTH_FILE}`);
+    console.log(`  auth:    skipped (non-interactive). Mint at ${KEYS_URL} and save to ${TOKEN_FILE}`);
     return;
   }
 
@@ -208,21 +214,21 @@ async function promptForAuth(): Promise<void> {
   }
 
   if (!answer.trim()) {
-    console.log(`  auth:    skipped — set up later by saving the key to ${AUTH_FILE}`);
+    console.log(`  auth:    skipped — set up later by saving the key to ${TOKEN_FILE}`);
     return;
   }
 
   const auth = parseAuthInput(answer);
   if (!auth) {
     console.log(`  auth:    couldn't find a ca_live_ token in that input — skipped.`);
-    console.log(`           Save it manually to ${AUTH_FILE}`);
+    console.log(`           Save it manually to ${TOKEN_FILE}`);
     return;
   }
 
   mkdirSync(join(homedir(), ".chest"), { recursive: true });
-  writeFileSync(AUTH_FILE, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(AUTH_FILE, 0o600);
-  console.log(`  auth:    saved → ${AUTH_FILE}`);
+  writeFileSync(TOKEN_FILE, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(TOKEN_FILE, 0o600);
+  console.log(`  auth:    saved → ${TOKEN_FILE}`);
 }
 
 async function fetchManifest(slug: string): Promise<AppManifest> {

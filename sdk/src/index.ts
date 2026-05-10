@@ -9,18 +9,21 @@
  *   keypair on disk. Mint keys at https://chest.sh/app/keys.
  *
  * - **local** (self-custody fallback): a Solana secret-key JSON file at
- *   `~/.chest/agent.json`. Signing happens locally; chest.sh is not in the
- *   path. Required when chest.sh is unreachable or the caller wants to hold
- *   their own keys.
+ *   `~/.chest/agent-keypair.json`. Signing happens locally; chest.sh is not
+ *   in the path. Required when chest.sh is unreachable or the caller wants
+ *   to hold their own keys.
  *
- * A third file-based flow (token at `~/.chest/auth.json`) is reserved for an
- * upcoming `chest login` CLI command. Until that ships, use api-key mode for
- * both deployed agents and local development.
+ * A third file-based flow (token at `~/.chest/agent-token.json`) is reserved
+ * for an upcoming `chest login` CLI command. Until that ships, use api-key
+ * mode for both deployed agents and local development.
+ *
+ * Legacy file names (`~/.chest/auth.json`, `~/.chest/agent.json`) are still
+ * read with a deprecation warning; rename when convenient.
  *
  * Mode auto-detect (when `mode` is unset or `"auto"`):
- *   1. `apiKey` option provided        → api-key
- *   2. `CHEST_API_KEY` env set         → api-key
- *   3. `~/.chest/agent.json` exists    → local
+ *   1. `apiKey` option provided                → api-key
+ *   2. `CHEST_API_KEY` env set                 → api-key
+ *   3. `~/.chest/agent-keypair.json` exists    → local
  *   4. throw with a helpful message
  *
  * `appSlug` (optional): declare which App is calling. Forwarded as
@@ -94,6 +97,7 @@ export interface PaidFetchResult {
 }
 
 interface AuthFile {
+  version?: number;
   apiUrl?: string;
   token: string;
 }
@@ -179,22 +183,73 @@ function resolveMode(opts: PaidFetchOptions): "api-key" | "privy" | "local" {
 
   // Auto-detect: api-key wins if a token is reachable, then file-based modes.
   if (opts.apiKey || process.env.CHEST_API_KEY) return "api-key";
-  if (existsSync(opts.authFile ?? defaultAuthFile())) return "privy";
-  if (existsSync(opts.keypairFile ?? defaultKeypairFile())) return "local";
+  if (tokenFileExists(opts.authFile)) return "privy";
+  if (keypairFileExists(opts.keypairFile)) return "local";
 
   throw new Error(
     "No agent credentials found. Either:\n" +
       "  - pass `apiKey` (or set CHEST_API_KEY), mint at https://chest.sh/app/keys\n" +
-      `  - place a Solana keypair JSON at ${defaultKeypairFile()}`,
+      `  - place a Solana keypair JSON at ${join(homedir(), ".chest", "agent-keypair.json")}`,
   );
 }
 
-function defaultAuthFile(): string {
-  return join(homedir(), ".chest", "auth.json");
+// File path resolution. New names introduced 2026-05; old names still
+// readable with a one-shot deprecation warning. Drop the legacy paths
+// after one minor release window.
+const CHEST_DIR = join(homedir(), ".chest");
+const TOKEN_FILE = "agent-token.json";
+const TOKEN_FILE_LEGACY = "auth.json";
+const KEYPAIR_FILE = "agent-keypair.json";
+const KEYPAIR_FILE_LEGACY = "agent.json";
+
+const _warned = new Set<string>();
+function warnLegacy(legacy: string, current: string): void {
+  if (_warned.has(legacy)) return;
+  _warned.add(legacy);
+  process.emitWarning(
+    `~/.chest/${legacy} is deprecated; rename to ~/.chest/${current}.`,
+    "DeprecationWarning",
+  );
 }
 
-function defaultKeypairFile(): string {
-  return join(homedir(), ".chest", "agent.json");
+function resolveTokenFile(override?: string): string {
+  if (override) return override;
+  const current = join(CHEST_DIR, TOKEN_FILE);
+  if (existsSync(current)) return current;
+  const legacy = join(CHEST_DIR, TOKEN_FILE_LEGACY);
+  if (existsSync(legacy)) {
+    warnLegacy(TOKEN_FILE_LEGACY, TOKEN_FILE);
+    return legacy;
+  }
+  return current;
+}
+
+function resolveKeypairFile(override?: string): string {
+  if (override) return override;
+  const current = join(CHEST_DIR, KEYPAIR_FILE);
+  if (existsSync(current)) return current;
+  const legacy = join(CHEST_DIR, KEYPAIR_FILE_LEGACY);
+  if (existsSync(legacy)) {
+    warnLegacy(KEYPAIR_FILE_LEGACY, KEYPAIR_FILE);
+    return legacy;
+  }
+  return current;
+}
+
+function tokenFileExists(override?: string): boolean {
+  if (override) return existsSync(override);
+  return (
+    existsSync(join(CHEST_DIR, TOKEN_FILE)) ||
+    existsSync(join(CHEST_DIR, TOKEN_FILE_LEGACY))
+  );
+}
+
+function keypairFileExists(override?: string): boolean {
+  if (override) return existsSync(override);
+  return (
+    existsSync(join(CHEST_DIR, KEYPAIR_FILE)) ||
+    existsSync(join(CHEST_DIR, KEYPAIR_FILE_LEGACY))
+  );
 }
 
 // ── api-key mode: token from option / env, sign via chest.sh ──────────────
@@ -215,14 +270,14 @@ async function signWithApiKey(
   return signViaChestApi({ token, apiUrl, paymentRequired, gateUrl, appSlug: opts.appSlug });
 }
 
-// ── privy mode: token from ~/.chest/auth.json, sign via chest.sh ──────────
+// ── privy mode: token from ~/.chest/agent-token.json, sign via chest.sh ──
 
 async function signWithChestApi(
   paymentRequired: unknown,
   gateUrl: string,
   opts: PaidFetchOptions,
 ): Promise<{ xPayment: string; payer: string | null }> {
-  const path = opts.authFile ?? defaultAuthFile();
+  const path = resolveTokenFile(opts.authFile);
   const auth: AuthFile = JSON.parse(readFileSync(path, "utf-8"));
   const apiUrl = opts.chestApi ?? auth.apiUrl ?? process.env.CHEST_API ?? DEFAULT_CHEST_API;
   return signViaChestApi({
@@ -277,7 +332,7 @@ async function signWithLocalKeypair(
   const { x402Client } = await import("@x402/core/client");
   const { registerExactSvmScheme } = await import("@x402/svm/exact/client");
 
-  const path = opts.keypairFile ?? defaultKeypairFile();
+  const path = resolveKeypairFile(opts.keypairFile);
   const raw = JSON.parse(readFileSync(path, "utf-8")) as number[];
   const keypair = Keypair.fromSecretKey(new Uint8Array(raw));
   const signer = await createKeyPairSignerFromBytes(keypair.secretKey);
