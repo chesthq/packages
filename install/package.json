@@ -29,7 +29,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/index.js",
     "dev": "tsx src/index.ts",
     "prepublishOnly": "npm run build",
     "release": "npm run build && npm publish --access public"
