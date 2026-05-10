@@ -4,8 +4,7 @@ import { createProxy } from "@chest-gate/proxy";
 import { loadConfig } from "../config.js";
 import { ensureKeypair } from "../keypair.js";
 import { runManageAction } from "../manage.js";
-
-const DEFAULT_SERVER = process.env.CHEST_SERVER || "https://gate.chest.sh";
+import { api, ApiError, NotLoggedInError } from "../api.js";
 
 export const gateCommand = new Command("gate")
   .description("Start the x402 payment proxy in front of your API")
@@ -146,11 +145,10 @@ gateCommand
   .command("archive")
   .description("Archive a deployed gate (soft-delete; hides from listings).")
   .argument("<slug>", "Gate slug to archive")
-  .option("--server <url>", "chest.sh API origin", DEFAULT_SERVER)
-  .option("--wallet-key <path>", "Path to keypair JSON. Defaults to ~/.chest/wallet.json.")
-  .action(async (slug: string, opts: { server: string; walletKey?: string }) => {
+  .option("--server <url>", "chest.sh API origin")
+  .action(async (slug: string, opts: { server?: string }) => {
     console.log(chalk.bold("\n  ⚡ Chest Gate Archive\n"));
-    await runManageAction({ kind: "gate", op: "archive", slug, server: opts.server, walletKey: opts.walletKey });
+    await runManageAction({ kind: "gate", op: "archive", slug, server: opts.server });
   });
 
 gateCommand
@@ -158,18 +156,190 @@ gateCommand
   .description("Toggle the unlisted flag on a deployed gate (use --relist to undo).")
   .argument("<slug>", "Gate slug")
   .option("--relist", "Re-list (clears the unlisted flag)")
-  .option("--server <url>", "chest.sh API origin", DEFAULT_SERVER)
-  .option("--wallet-key <path>", "Path to keypair JSON. Defaults to ~/.chest/wallet.json.")
+  .option("--server <url>", "chest.sh API origin")
   .action(
-    async (slug: string, opts: { relist?: boolean; server: string; walletKey?: string }) => {
+    async (slug: string, opts: { relist?: boolean; server?: string }) => {
       console.log(chalk.bold("\n  ⚡ Chest Gate Unlist\n"));
       await runManageAction({
         kind: "gate",
         op: "unlist",
         slug,
         server: opts.server,
-        walletKey: opts.walletKey,
         unlisted: !opts.relist,
       });
     },
   );
+
+// ── Owner-scoped queries (require `chest-gate login`) ────────────────────
+
+interface GateOwnerView {
+  slug: string;
+  upstream: string;
+  wallet: string;
+  deployer: string;
+  network: string;
+  defaultPrice?: number;
+  freebie: number;
+  unlisted?: boolean;
+  archivedAt?: string | null;
+  createdAt?: string;
+  endpointCount?: number;
+}
+
+gateCommand
+  .command("list")
+  .description("List gates deployed by the wallet you're logged in as.")
+  .option("--server <url>", "chest.sh API origin")
+  .option("--json", "Emit machine-readable JSON")
+  .action(async (opts: { server?: string; json?: boolean }) => {
+    try {
+      const result = await api<{ deployments: GateOwnerView[] }>("/api/my-gates", {
+        server: opts.server,
+      });
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(result) + "\n");
+        return;
+      }
+      console.log(chalk.bold("\n  ⚡ Your Gates\n"));
+      if (result.deployments.length === 0) {
+        console.log(chalk.gray("  No gates deployed by this wallet yet.\n"));
+        return;
+      }
+      for (const g of result.deployments) {
+        const tags = [
+          g.archivedAt ? chalk.red("archived") : null,
+          g.unlisted ? chalk.yellow("unlisted") : null,
+        ].filter(Boolean).join(" ");
+        console.log(chalk.cyan("  " + g.slug) + (tags ? "  " + tags : ""));
+        console.log(chalk.gray("    upstream: ") + chalk.white(g.upstream));
+        console.log(chalk.gray("    network:  ") + chalk.white(g.network));
+        if (typeof g.defaultPrice === "number") {
+          console.log(chalk.gray("    price:    ") + chalk.white(`$${g.defaultPrice.toFixed(6)}`));
+        }
+        console.log();
+      }
+    } catch (err) {
+      handleApiError(err);
+      process.exit(1);
+    }
+  });
+
+gateCommand
+  .command("inspect")
+  .description("Show the full owner view of a deployed gate.")
+  .argument("<slug>", "Gate slug")
+  .option("--server <url>", "chest.sh API origin")
+  .option("--json", "Emit machine-readable JSON")
+  .action(async (slug: string, opts: { server?: string; json?: boolean }) => {
+    try {
+      const gate = await api<GateOwnerView & Record<string, unknown>>(
+        `/api/my-gates/${encodeURIComponent(slug.toLowerCase())}`,
+        { server: opts.server },
+      );
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(gate) + "\n");
+        return;
+      }
+      console.log(chalk.bold(`\n  ⚡ Gate: ${gate.slug}\n`));
+      for (const [k, v] of Object.entries(gate)) {
+        if (v === null || v === undefined) continue;
+        const value = typeof v === "object" ? JSON.stringify(v) : String(v);
+        console.log(chalk.gray(`  ${k.padEnd(22)}`) + chalk.white(value));
+      }
+      console.log();
+    } catch (err) {
+      handleApiError(err, slug);
+      process.exit(1);
+    }
+  });
+
+interface GateLogRow {
+  id: number;
+  slug: string;
+  txSignature: string | null;
+  payerWallet: string | null;
+  route: string | null;
+  amountUsdc: number | null;
+  state: string;
+  createdAt: string;
+  settledAt: string | null;
+}
+
+gateCommand
+  .command("logs")
+  .description("Show recent paid calls for a deployed gate (you must own it).")
+  .argument("<slug>", "Gate slug")
+  .option("--limit <n>", "Rows per page (max 200)", "50")
+  .option("--before <id>", "Cursor (transaction id) for older rows")
+  .option("--server <url>", "chest.sh API origin")
+  .option("--json", "Emit machine-readable JSON")
+  .action(
+    async (
+      slug: string,
+      opts: { limit: string; before?: string; server?: string; json?: boolean },
+    ) => {
+      const qs = new URLSearchParams();
+      qs.set("limit", opts.limit);
+      if (opts.before) qs.set("before", opts.before);
+      const path = `/api/my-gates/${encodeURIComponent(slug.toLowerCase())}/logs?${qs}`;
+      try {
+        const result = await api<{
+          slug: string;
+          transactions: GateLogRow[];
+          nextCursor: number | null;
+        }>(path, { server: opts.server });
+        if (opts.json) {
+          process.stdout.write(JSON.stringify(result) + "\n");
+          return;
+        }
+        console.log(chalk.bold(`\n  ⚡ Logs for ${result.slug}\n`));
+        if (result.transactions.length === 0) {
+          console.log(chalk.gray("  No transactions yet.\n"));
+          return;
+        }
+        for (const t of result.transactions) {
+          const amount = t.amountUsdc != null ? `$${t.amountUsdc.toFixed(6)}` : "—";
+          const stateColor =
+            t.state === "settled" ? chalk.green : t.state === "failed" ? chalk.red : chalk.yellow;
+          console.log(
+            chalk.gray("  ") +
+              chalk.white(t.createdAt.padEnd(25)) +
+              stateColor(t.state.padEnd(10)) +
+              chalk.cyan(amount.padEnd(12)) +
+              chalk.white(t.route ?? "—"),
+          );
+          if (t.payerWallet) console.log(chalk.gray("    payer: ") + chalk.gray(t.payerWallet));
+          if (t.txSignature) console.log(chalk.gray("    tx:    ") + chalk.gray(t.txSignature));
+        }
+        if (result.nextCursor) {
+          console.log();
+          console.log(chalk.gray(`  Older rows: --before ${result.nextCursor}`));
+        }
+        console.log();
+      } catch (err) {
+        handleApiError(err, slug);
+        process.exit(1);
+      }
+    },
+  );
+
+function handleApiError(err: unknown, slug?: string): void {
+  if (err instanceof NotLoggedInError) {
+    console.error(chalk.red(`  Error: ${err.message}`));
+    return;
+  }
+  if (err instanceof ApiError) {
+    console.error(chalk.red(`  Error ${err.status}: ${err.message}`));
+    if (err.status === 401) {
+      console.error(chalk.gray("  Re-run `chest-gate login` to mint a fresh token."));
+    } else if (err.status === 403 && slug) {
+      console.error(
+        chalk.gray(`  Your wallet doesn't own slug "${slug}". Log in with the deployer wallet.`),
+      );
+    } else if (err.status === 404 && slug) {
+      console.error(chalk.gray(`  Slug "${slug}" not found.`));
+    }
+    return;
+  }
+  console.error(chalk.red(`  Error: ${(err as Error).message}`));
+}

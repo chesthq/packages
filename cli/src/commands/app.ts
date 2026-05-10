@@ -8,6 +8,7 @@ import { hashManifest, signAppMessage } from "@chest-gate/proxy";
 import { loadManifest, toAppSlug, type AppManifest, APP_KINDS, type AppKind } from "../manifest.js";
 import { ensureKeypair } from "../keypair.js";
 import { runManageAction } from "../manage.js";
+import { api, ApiError, NotLoggedInError } from "../api.js";
 
 export const appCommand = new Command("app").description(
   "Manage Chest Gate App manifests and publish them to the chest.sh registry",
@@ -356,11 +357,10 @@ appCommand
   .command("archive")
   .description("Archive a published app (soft-delete; hides from listings).")
   .argument("<slug>", "App slug to archive")
-  .option("--server <url>", "chest.sh API origin", DEFAULT_SERVER)
-  .option("--wallet-key <path>", "Path to keypair JSON. Defaults to ~/.chest/wallet.json.")
-  .action(async (slug: string, opts: { server: string; walletKey?: string }) => {
+  .option("--server <url>", "chest.sh API origin")
+  .action(async (slug: string, opts: { server?: string }) => {
     console.log(chalk.bold("\n  ⚡ Chest App Archive\n"));
-    await runManageAction({ kind: "app", op: "archive", slug, server: opts.server, walletKey: opts.walletKey });
+    await runManageAction({ kind: "app", op: "archive", slug, server: opts.server });
   });
 
 appCommand
@@ -368,18 +368,133 @@ appCommand
   .description("Toggle the unlisted flag on a published app (use --relist to undo).")
   .argument("<slug>", "App slug")
   .option("--relist", "Re-list (clears the unlisted flag)")
-  .option("--server <url>", "chest.sh API origin", DEFAULT_SERVER)
-  .option("--wallet-key <path>", "Path to keypair JSON. Defaults to ~/.chest/wallet.json.")
+  .option("--server <url>", "chest.sh API origin")
   .action(
-    async (slug: string, opts: { relist?: boolean; server: string; walletKey?: string }) => {
+    async (slug: string, opts: { relist?: boolean; server?: string }) => {
       console.log(chalk.bold("\n  ⚡ Chest App Unlist\n"));
       await runManageAction({
         kind: "app",
         op: "unlist",
         slug,
         server: opts.server,
-        walletKey: opts.walletKey,
         unlisted: !opts.relist,
       });
     },
   );
+
+// ── Owner-scoped queries (require `chest-gate login`) ────────────────────
+
+interface AppSummary {
+  slug: string;
+  name: string;
+  kind: string;
+  tagline: string;
+  author: string;
+  endpoints: string[];
+  version: string;
+  installs: number;
+  attributedCallCount: number;
+  routedUsdc: number;
+  verified: boolean;
+  createdAt: string;
+}
+
+appCommand
+  .command("list")
+  .description("List apps published by the wallet you're logged in as.")
+  .option("--limit <n>", "Rows per page (max 200)", "50")
+  .option("--offset <n>", "Pagination offset", "0")
+  .option("--server <url>", "chest.sh API origin")
+  .option("--json", "Emit machine-readable JSON")
+  .action(
+    async (opts: { limit: string; offset: string; server?: string; json?: boolean }) => {
+      const qs = new URLSearchParams({ limit: opts.limit, offset: opts.offset });
+      try {
+        const result = await api<{
+          apps: AppSummary[];
+          total: number;
+          limit: number;
+          offset: number;
+          nextOffset: number | null;
+        }>(`/api/my-apps?${qs}`, { server: opts.server });
+        if (opts.json) {
+          process.stdout.write(JSON.stringify(result) + "\n");
+          return;
+        }
+        console.log(chalk.bold("\n  ⚡ Your Apps\n"));
+        if (result.apps.length === 0) {
+          console.log(chalk.gray("  No apps published by this wallet yet.\n"));
+          return;
+        }
+        for (const a of result.apps) {
+          console.log(chalk.cyan("  " + a.slug) + chalk.gray(`  ${a.kind} v${a.version}`));
+          console.log(chalk.gray("    name:      ") + chalk.white(a.name));
+          console.log(chalk.gray("    tagline:   ") + chalk.white(a.tagline));
+          console.log(
+            chalk.gray("    earnings:  ") +
+              chalk.green(`$${a.routedUsdc.toFixed(6)}`) +
+              chalk.gray(` over ${a.attributedCallCount} attributed calls`),
+          );
+          console.log();
+        }
+        if (result.nextOffset !== null) {
+          console.log(chalk.gray(`  Next page: --offset ${result.nextOffset}`));
+          console.log();
+        }
+      } catch (err) {
+        handleApiError(err);
+        process.exit(1);
+      }
+    },
+  );
+
+appCommand
+  .command("inspect")
+  .description("Show the full owner view of a published app.")
+  .argument("<slug>", "App slug")
+  .option("--server <url>", "chest.sh API origin")
+  .option("--json", "Emit machine-readable JSON")
+  .action(async (slug: string, opts: { server?: string; json?: boolean }) => {
+    try {
+      const result = await api<Record<string, unknown>>(
+        `/api/my-apps/${encodeURIComponent(slug.toLowerCase())}`,
+        { server: opts.server },
+      );
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(result) + "\n");
+        return;
+      }
+      console.log(chalk.bold(`\n  ⚡ App: ${result.slug}\n`));
+      for (const [k, v] of Object.entries(result)) {
+        if (v === null || v === undefined) continue;
+        const value = typeof v === "object" ? JSON.stringify(v) : String(v);
+        const display = value.length > 200 ? value.slice(0, 200) + "…" : value;
+        console.log(chalk.gray(`  ${k.padEnd(22)}`) + chalk.white(display));
+      }
+      console.log();
+    } catch (err) {
+      handleApiError(err, slug);
+      process.exit(1);
+    }
+  });
+
+function handleApiError(err: unknown, slug?: string): void {
+  if (err instanceof NotLoggedInError) {
+    console.error(chalk.red(`  Error: ${err.message}`));
+    return;
+  }
+  if (err instanceof ApiError) {
+    console.error(chalk.red(`  Error ${err.status}: ${err.message}`));
+    if (err.status === 401) {
+      console.error(chalk.gray("  Re-run `chest-gate login` to mint a fresh token."));
+    } else if (err.status === 403 && slug) {
+      console.error(
+        chalk.gray(`  Your wallet doesn't own slug "${slug}". Log in with the author wallet.`),
+      );
+    } else if (err.status === 404 && slug) {
+      console.error(chalk.gray(`  Slug "${slug}" not found.`));
+    }
+    return;
+  }
+  console.error(chalk.red(`  Error: ${(err as Error).message}`));
+}
