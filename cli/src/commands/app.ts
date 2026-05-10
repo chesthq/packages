@@ -9,6 +9,7 @@ import { loadManifest, toAppSlug, type AppManifest, APP_KINDS, type AppKind } fr
 import { ensureKeypair } from "../keypair.js";
 import { runManageAction } from "../manage.js";
 import { api, ApiError, NotLoggedInError } from "../api.js";
+import { printKeyValues } from "../format.js";
 
 export const appCommand = new Command("app").description(
   "Manage Chest Gate App manifests and publish them to the chest.sh registry",
@@ -465,12 +466,7 @@ appCommand
         return;
       }
       console.log(chalk.bold(`\n  ⚡ App: ${result.slug}\n`));
-      for (const [k, v] of Object.entries(result)) {
-        if (v === null || v === undefined) continue;
-        const value = typeof v === "object" ? JSON.stringify(v) : String(v);
-        const display = value.length > 200 ? value.slice(0, 200) + "…" : value;
-        console.log(chalk.gray(`  ${k.padEnd(22)}`) + chalk.white(display));
-      }
+      printKeyValues(result, { truncate: 200 });
       console.log();
     } catch (err) {
       handleApiError(err, slug);
