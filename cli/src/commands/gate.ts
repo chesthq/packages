@@ -5,6 +5,7 @@ import { loadConfig } from "../config.js";
 import { ensureKeypair } from "../keypair.js";
 import { runManageAction } from "../manage.js";
 import { api, ApiError, NotLoggedInError } from "../api.js";
+import { printKeyValues } from "../format.js";
 
 export const gateCommand = new Command("gate")
   .description("Start the x402 payment proxy in front of your API")
@@ -241,11 +242,7 @@ gateCommand
         return;
       }
       console.log(chalk.bold(`\n  ⚡ Gate: ${gate.slug}\n`));
-      for (const [k, v] of Object.entries(gate)) {
-        if (v === null || v === undefined) continue;
-        const value = typeof v === "object" ? JSON.stringify(v) : String(v);
-        console.log(chalk.gray(`  ${k.padEnd(22)}`) + chalk.white(value));
-      }
+      printKeyValues(gate);
       console.log();
     } catch (err) {
       handleApiError(err, slug);
