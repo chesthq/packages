@@ -25,6 +25,9 @@ jobs:
       - name: Build mcp
         run: npm run build --workspace=mcp
 
+      - name: Build auth-flow
+        run: npm run build --workspace=auth-flow
+
       - name: Build install
         run: npm run build --workspace=install
 

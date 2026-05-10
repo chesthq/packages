@@ -1,0 +1,44 @@
+{
+  "name": "@chest-gate/auth-flow",
+  "version": "0.1.0",
+  "description": "PKCE loopback login flow for Chest Gate clients (CLI, install, SDK). Mints a per-device agent token via chest.sh.",
+  "keywords": [
+    "x402",
+    "solana",
+    "pkce",
+    "oauth",
+    "chest-gate"
+  ],
+  "homepage": "https://chest.sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chesthq/packages.git",
+    "directory": "auth-flow"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "open": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
