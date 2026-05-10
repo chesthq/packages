@@ -1,6 +1,6 @@
 {
   "name": "@chest-gate/auth-flow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "PKCE loopback login flow for Chest Gate clients (CLI, install, SDK). Mints a per-device agent token via chest.sh.",
   "keywords": [
     "x402",

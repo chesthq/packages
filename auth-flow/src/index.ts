@@ -237,19 +237,63 @@ function base64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+// Mirrors chest.sh's dark-mode design tokens (globals.css `.dark` block).
+// Uses literal oklch() values so the browser computes them identically to
+// the chest.sh authorize page the user just came from.
 function htmlPage(title: string, body: string, ok: boolean): string {
-  const accent = ok ? "#10b981" : "#ef4444";
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>${title}</title>
+<html lang="en"><head><meta charset="utf-8">
+<title>${title}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  body { margin:0; min-height:100vh; display:grid; place-items:center;
-         font:15px/1.5 -apple-system,BlinkMacSystemFont,sans-serif; background:#0b0b0d; color:#e5e5e5; }
-  .card { background:#141418; border:1px solid #26262c; border-radius:12px;
-          padding:32px 36px; max-width:420px; }
-  .dot { display:inline-block; width:10px; height:10px; border-radius:50%;
-         background:${accent}; margin-right:10px; vertical-align:middle; }
-  h1 { margin:0 0 8px; font-size:18px; font-weight:600; }
-  p  { margin:0; color:#a3a3aa; }
+  :root {
+    --bg:          oklch(0.07 0.005 270);
+    --bg-elevated: oklch(0.11 0.005 270);
+    --border:      oklch(0.22 0.008 260);
+    --fg:          oklch(0.98 0.003 95);
+    --fg-muted:    oklch(0.68 0.006 260);
+    --success:     oklch(0.72 0.17 155);
+    --danger:      oklch(0.6 0.22 25);
+    --accent:      ${ok ? "var(--success)" : "var(--danger)"};
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100vh;
+    background: var(--bg); color: var(--fg);
+    font-family: "Geist", "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body { display: grid; place-items: center; padding: 24px; }
+  .card {
+    width: 100%; max-width: 460px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 24px 28px;
+  }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .dot {
+    width: 8px; height: 8px; border-radius: 9999px;
+    background: var(--accent);
+    flex: 0 0 auto;
+  }
+  h1 {
+    margin: 0;
+    font-size: 17px; font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+    line-height: 1.3;
+  }
+  p {
+    margin: 0;
+    color: var(--fg-muted);
+    font-size: 14px; line-height: 1.55;
+    letter-spacing: -0.005em;
+  }
 </style></head>
-<body><div class="card"><h1><span class="dot"></span>${title}</h1><p>${body}</p></div></body></html>`;
+<body><div class="card"><div class="row"><span class="dot"></span><h1>${title}</h1></div><p>${body}</p></div></body></html>`;
 }
