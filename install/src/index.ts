@@ -29,11 +29,18 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { fileURLToPath } from "node:url";
 import { runPkceLogin, PkceLoginError } from "@chest-gate/auth-flow";
 
-const VERSION = "0.5.0";
+// Read from package.json so the banner can't drift on future bumps
+// (the previous hardcoded `const VERSION = ...` shipped wrong across 0.4.0/0.5.0/0.5.1).
+const VERSION = (
+  JSON.parse(
+    readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../package.json"), "utf-8"),
+  ) as { version: string }
+).version;
 const DEFAULT_API = "https://gate.chest.sh";
 const DEFAULT_WEB = "https://chest.sh";
 const KEYS_URL = "https://chest.sh/dashboard/agent-wallet";
