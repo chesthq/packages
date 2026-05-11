@@ -116,6 +116,6 @@ export const loginCommand = new Command("login")
     console.log(chalk.gray(`    Token label: `) + chalk.white(result.label));
     console.log(chalk.gray(`    Saved to:    `) + chalk.white(path));
     console.log();
-    console.log(chalk.gray("  Manage tokens at ") + chalk.cyan(`${webUrl}/dashboard/agent-wallet`));
+    console.log(chalk.gray("  Manage tokens at ") + chalk.cyan(`${webUrl}/app/agent-wallet`));
     console.log();
   });

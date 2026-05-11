@@ -33,10 +33,10 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { runPkceLogin, PkceLoginError } from "@chest-gate/auth-flow";
 
-const VERSION = "0.3.1";
+const VERSION = "0.5.0";
 const DEFAULT_API = "https://gate.chest.sh";
 const DEFAULT_WEB = "https://chest.sh";
-const KEYS_URL = "https://chest.sh/app/keys";
+const KEYS_URL = "https://chest.sh/app/agent-wallet";
 const TOKEN_FILE = join(homedir(), ".chest", "agent-token.json");
 
 type AppKind = "skill" | "plugin" | "mcp";
@@ -161,23 +161,47 @@ function showManifestAndExit(app: AppManifest, reason: string): never {
   process.exit(2);
 }
 
+// Matches @chest-gate/cli's Credentials shape so the file written here is
+// readable by `chest-gate whoami` and friends. ownerWallet/tokenId/label
+// stay empty for the paste flow (no PKCE response to populate them from);
+// the browser flow fills all seven.
 interface TokenFile {
   version: 1;
   token: string;
-  apiUrl: string;
+  ownerWallet: string;
+  tokenId: string;
+  label: string;
+  gateUrl: string;
+  createdAt: string;
 }
 
-function parseAuthInput(raw: string): TokenFile | null {
+function parseAuthInput(raw: string, gateUrl: string): TokenFile | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
+  const now = new Date().toISOString();
   if (trimmed.startsWith("ca_live_")) {
-    return { version: 1, token: trimmed, apiUrl: "https://chest.sh" };
+    return {
+      version: 1,
+      token: trimmed,
+      ownerWallet: "",
+      tokenId: "",
+      label: "",
+      gateUrl,
+      createdAt: now,
+    };
   }
   try {
-    const parsed = JSON.parse(trimmed) as { token?: unknown; apiUrl?: unknown };
+    const parsed = JSON.parse(trimmed) as { token?: unknown };
     if (typeof parsed.token === "string" && parsed.token.startsWith("ca_live_")) {
-      const apiUrl = typeof parsed.apiUrl === "string" ? parsed.apiUrl : "https://chest.sh";
-      return { version: 1, token: parsed.token, apiUrl };
+      return {
+        version: 1,
+        token: parsed.token,
+        ownerWallet: "",
+        tokenId: "",
+        label: "",
+        gateUrl,
+        createdAt: now,
+      };
     }
   } catch {
     // not JSON
@@ -246,7 +270,15 @@ async function runBrowserLogin(): Promise<void> {
         console.log(`    ${loginUrl}`);
       },
     });
-    writeTokenFile({ version: 1, token: result.token, apiUrl: webUrl });
+    writeTokenFile({
+      version: 1,
+      token: result.token,
+      ownerWallet: result.ownerWallet,
+      tokenId: result.tokenId,
+      label: result.label,
+      gateUrl,
+      createdAt: new Date().toISOString(),
+    });
     console.log();
     console.log(`  ✓ Logged in as ${result.ownerWallet}`);
     console.log(`    Token label: ${result.label}`);
@@ -277,7 +309,8 @@ async function runPasteFlow(): Promise<void> {
     return;
   }
 
-  const auth = parseAuthInput(answer);
+  const gateUrl = process.env.CHEST_API ?? DEFAULT_API;
+  const auth = parseAuthInput(answer, gateUrl);
   if (!auth) {
     console.log(`  auth:    couldn't find a ca_live_ token in that input — skipped.`);
     console.log(`           Save it manually to ${TOKEN_FILE}`);

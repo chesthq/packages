@@ -9,9 +9,9 @@
  *   keypair on disk. Mint keys at https://chest.sh/app/keys.
  *
  * - **privy** (interactive sessions): a token JSON at
- *   `~/.chest/agent-token.json` (`{ version, token, apiUrl? }`). Signing
- *   happens server-side via the user's Privy-managed wallet. Mint tokens at
- *   https://chest.sh/dashboard/keys.
+ *   `~/.chest/agent-token.json` (`{ version, token, gateUrl?, ... }` — the
+ *   shape written by `chest-gate login` and `npx @chest-gate/install`).
+ *   Signing happens server-side via the user's Privy-managed wallet.
  *
  * - **local** (self-custody fallback): a Solana secret-key JSON file at
  *   `~/.chest/agent-keypair.json`. Signing happens locally; chest.sh is not
@@ -97,7 +97,7 @@ export interface PaidFetchResult {
 
 interface AuthFile {
   version?: number;
-  apiUrl?: string;
+  gateUrl?: string;
   token: string;
 }
 
@@ -187,7 +187,8 @@ function resolveMode(opts: PaidFetchOptions): "api-key" | "privy" | "local" {
 
   throw new Error(
     "No agent credentials found. Either:\n" +
-      "  - pass `apiKey` (or set CHEST_API_KEY), mint at https://chest.sh/app/keys\n" +
+      "  - run `chest-gate login` (PKCE browser flow, writes ~/.chest/agent-token.json)\n" +
+      "  - pass `apiKey` (or set CHEST_API_KEY), mint at https://chest.sh/app/agent-wallet\n" +
       `  - place a Solana keypair JSON at ${join(homedir(), ".chest", "agent-keypair.json")}`,
   );
 }
@@ -239,7 +240,7 @@ async function signWithChestApi(
 ): Promise<{ xPayment: string; payer: string | null }> {
   const path = resolveTokenFile(opts.authFile);
   const auth: AuthFile = JSON.parse(readFileSync(path, "utf-8"));
-  const apiUrl = opts.chestApi ?? auth.apiUrl ?? process.env.CHEST_API ?? DEFAULT_CHEST_API;
+  const apiUrl = opts.chestApi ?? auth.gateUrl ?? process.env.CHEST_API ?? DEFAULT_CHEST_API;
   return signViaChestApi({
     token: auth.token,
     apiUrl,
