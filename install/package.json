@@ -1,6 +1,6 @@
 {
   "name": "@chest-gate/install",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "One-command installer for Chest Gate apps. Resolves a slug against the chest.sh registry, fetches its source from GitHub, and drops it in the right runtime folder. Falls back to printing manifest info for non-skill kinds.",
   "keywords": [
     "x402",

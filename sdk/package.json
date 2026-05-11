@@ -1,6 +1,6 @@
 {
   "name": "@chest-gate/sdk",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Drop-in fetch() that pays x402 gates from any agent. Use a managed wallet (Chest API key) or a local keypair.",
   "keywords": [
     "x402",
