@@ -1,6 +1,6 @@
 {
   "name": "@chest-gate/proxy",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "x402 reverse proxy engine for Chest. Run your own paid API gate, sign deploy/app payloads, generate API keys, compute splits, resolve referrers.",
   "keywords": [
     "x402",

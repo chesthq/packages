@@ -4,32 +4,37 @@
  * Agents that can't sign per-request with a wallet (MCP servers, Claude
  * skills, bots without keypair access) can instead use a bearer token:
  *
- *   Authorization: Bearer cg_live_<28 chars>
+ *   Authorization: Bearer cg_pub_live_<28 chars>
+ *
+ * The `pub` segment (Stripe-style "publishable") signals that this key is
+ * safe to ship in distributed code — agents/MCP servers/skill source. It's
+ * not a spending credential; leaking it only credits the bound wallet for
+ * more referrer commissions.
  *
  * The server hashes the token with HMAC-SHA256 (key = API_KEY_HASH_PEPPER)
  * and looks up the row. The row carries the `payoutWallet`, committed at
  * creation time, so a compromised dashboard session cannot redirect a
  * historical key's payouts.
  *
- * Key format: `cg_{env}_{28 base58 chars}`
+ * Key format: `cg_pub_{env}_{28 base58 chars}`
  *   - env = "live" (mainnet) or "test" (devnet)
  *   - random bytes drawn from crypto.randomBytes, encoded to base58
  *
- * We store the prefix (`cg_live_7a2f`) so the dashboard can show a
+ * We store the prefix (`cg_pub_live_7a2f`) so the dashboard can show a
  * recognizable fragment without ever re-displaying the full key.
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 const KEY_BODY_BYTES = 20; // ~28 base58 chars after encoding
-const PREFIX_BODY_CHARS = 4; // cg_live_XXXX shown in UI
+const PREFIX_BODY_CHARS = 4; // cg_pub_live_XXXX shown in UI
 
 export type ApiKeyEnv = "live" | "test";
 
 export interface GeneratedApiKey {
   /** Full key, shown to the user ONCE. Never persisted. */
   plaintext: string;
-  /** cg_live_XXXX, safe to store and display. */
+  /** cg_pub_live_XXXX, safe to store and display. */
   prefix: string;
   /** HMAC-SHA256(pepper, plaintext), hex. Stored. */
   hash: string;
@@ -46,8 +51,8 @@ export function generateApiKey(env: ApiKeyEnv, pepper: string): GeneratedApiKey 
   }
 
   const body = base58Encode(randomBytes(KEY_BODY_BYTES));
-  const plaintext = `cg_${env}_${body}`;
-  const prefix = `cg_${env}_${body.slice(0, PREFIX_BODY_CHARS)}`;
+  const plaintext = `cg_pub_${env}_${body}`;
+  const prefix = `cg_pub_${env}_${body.slice(0, PREFIX_BODY_CHARS)}`;
   const hash = hashApiKey(plaintext, pepper);
 
   return { plaintext, prefix, hash };
@@ -62,9 +67,9 @@ export function hashApiKey(plaintext: string, pepper: string): string {
 }
 
 /**
- * Parse `Authorization: Bearer cg_...` and return the token only if it
- * matches the expected shape. Returns null for anything else (including
- * admin keys, which live under a different prefix).
+ * Parse `Authorization: Bearer cg_pub_...` and return the token only if
+ * it matches the expected shape. Returns null for anything else (including
+ * admin keys and agent tokens, which live under different prefixes).
  */
 export function extractApiKeyFromHeader(
   getHeader: (name: string) => string | null | undefined
@@ -72,7 +77,7 @@ export function extractApiKeyFromHeader(
   const auth = getHeader("authorization");
   if (!auth) return null;
   const trimmed = auth.trim();
-  const match = /^Bearer\s+(cg_(?:live|test)_[1-9A-HJ-NP-Za-km-z]{20,})$/.exec(trimmed);
+  const match = /^Bearer\s+(cg_pub_(?:live|test)_[1-9A-HJ-NP-Za-km-z]{20,})$/.exec(trimmed);
   return match?.[1] ?? null;
 }
 
