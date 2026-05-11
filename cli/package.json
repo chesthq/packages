@@ -1,6 +1,6 @@
 {
   "name": "@chest-gate/cli",
-  "version": "0.8.2",
+  "version": "0.9.1",
   "description": "Chest Gate CLI. One command to monetise any API with x402 on Solana.",
   "keywords": [
     "x402",
@@ -37,6 +37,7 @@
   "dependencies": {
     "@chest-gate/auth-flow": "^0.1.0",
     "@chest-gate/proxy": "^0.1.0",
+    "@chest-gate/sdk": "^0.4.0",
     "@coral-xyz/anchor": "^0.32.1",
     "@noble/curves": "^1.0.0",
     "@solana/kit": "^5.5.0",
