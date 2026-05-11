@@ -51,8 +51,6 @@ If `mode` is unset (or `"auto"`), the SDK picks in this order:
 3. `~/.chest/agent-keypair.json` exists → `local`
 4. Throws with a helpful message
 
-Legacy file names (`~/.chest/auth.json` for the token, `~/.chest/agent.json` for the keypair) are still read with a deprecation warning; rename when convenient.
-
 You almost never need to pass `mode` explicitly.
 
 ## Options

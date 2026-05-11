@@ -30,7 +30,7 @@ npx -y @chest-gate/install trading-decision
    - **[2] Paste** — paste a `ca_live_…` token from [chest.sh/app/keys](https://chest.sh/app/keys). Useful for headless installs where the browser flow can't open a window.
    - **[3] Skip** — set up later by running `chest-gate login` or saving a key manually.
 
-   Skipped entirely if `CHEST_API_KEY` is set, the file already exists, or the shell isn't a TTY. Legacy `~/.chest/auth.json` is still recognised.
+   Skipped entirely if `CHEST_API_KEY` is set, the file already exists, or the shell isn't a TTY.
 6. **Done.** Prints the App's `next steps` block.
 
 ## Environment

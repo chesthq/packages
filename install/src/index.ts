@@ -38,7 +38,6 @@ const DEFAULT_API = "https://gate.chest.sh";
 const DEFAULT_WEB = "https://chest.sh";
 const KEYS_URL = "https://chest.sh/app/keys";
 const TOKEN_FILE = join(homedir(), ".chest", "agent-token.json");
-const LEGACY_TOKEN_FILE = join(homedir(), ".chest", "auth.json");
 
 type AppKind = "skill" | "plugin" | "mcp";
 
@@ -200,10 +199,6 @@ async function promptForAuth(): Promise<void> {
   }
   if (existsSync(TOKEN_FILE)) {
     console.log(`  auth:    ${TOKEN_FILE} already exists — leaving it alone`);
-    return;
-  }
-  if (existsSync(LEGACY_TOKEN_FILE)) {
-    console.log(`  auth:    ${LEGACY_TOKEN_FILE} exists (legacy name) — rename to ${TOKEN_FILE} when convenient`);
     return;
   }
   if (!process.stdin.isTTY) {
