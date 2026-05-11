@@ -18,9 +18,6 @@
  *   in the path. Required when chest.sh is unreachable or the caller wants
  *   to hold their own keys.
  *
- * Legacy file names (`~/.chest/auth.json`, `~/.chest/agent.json`) are still
- * read with a deprecation warning; rename when convenient.
- *
  * Mode auto-detect (when `mode` is unset or `"auto"`):
  *   1. `apiKey` option provided                → api-key
  *   2. `CHEST_API_KEY` env set                 → api-key
@@ -195,63 +192,24 @@ function resolveMode(opts: PaidFetchOptions): "api-key" | "privy" | "local" {
   );
 }
 
-// File path resolution. New names introduced 2026-05; old names still
-// readable with a one-shot deprecation warning. Drop the legacy paths
-// after one minor release window.
 const CHEST_DIR = join(homedir(), ".chest");
-const TOKEN_FILE = "agent-token.json";
-const TOKEN_FILE_LEGACY = "auth.json";
-const KEYPAIR_FILE = "agent-keypair.json";
-const KEYPAIR_FILE_LEGACY = "agent.json";
-
-const _warned = new Set<string>();
-function warnLegacy(legacy: string, current: string): void {
-  if (_warned.has(legacy)) return;
-  _warned.add(legacy);
-  process.emitWarning(
-    `~/.chest/${legacy} is deprecated; rename to ~/.chest/${current}.`,
-    "DeprecationWarning",
-  );
-}
+const TOKEN_FILE = join(CHEST_DIR, "agent-token.json");
+const KEYPAIR_FILE = join(CHEST_DIR, "agent-keypair.json");
 
 function resolveTokenFile(override?: string): string {
-  if (override) return override;
-  const current = join(CHEST_DIR, TOKEN_FILE);
-  if (existsSync(current)) return current;
-  const legacy = join(CHEST_DIR, TOKEN_FILE_LEGACY);
-  if (existsSync(legacy)) {
-    warnLegacy(TOKEN_FILE_LEGACY, TOKEN_FILE);
-    return legacy;
-  }
-  return current;
+  return override ?? TOKEN_FILE;
 }
 
 function resolveKeypairFile(override?: string): string {
-  if (override) return override;
-  const current = join(CHEST_DIR, KEYPAIR_FILE);
-  if (existsSync(current)) return current;
-  const legacy = join(CHEST_DIR, KEYPAIR_FILE_LEGACY);
-  if (existsSync(legacy)) {
-    warnLegacy(KEYPAIR_FILE_LEGACY, KEYPAIR_FILE);
-    return legacy;
-  }
-  return current;
+  return override ?? KEYPAIR_FILE;
 }
 
 function tokenFileExists(override?: string): boolean {
-  if (override) return existsSync(override);
-  return (
-    existsSync(join(CHEST_DIR, TOKEN_FILE)) ||
-    existsSync(join(CHEST_DIR, TOKEN_FILE_LEGACY))
-  );
+  return existsSync(override ?? TOKEN_FILE);
 }
 
 function keypairFileExists(override?: string): boolean {
-  if (override) return existsSync(override);
-  return (
-    existsSync(join(CHEST_DIR, KEYPAIR_FILE)) ||
-    existsSync(join(CHEST_DIR, KEYPAIR_FILE_LEGACY))
-  );
+  return existsSync(override ?? KEYPAIR_FILE);
 }
 
 // ── api-key mode: token from option / env, sign via chest.sh ──────────────

@@ -67,7 +67,7 @@ Re-running `chest-gate deploy` updates an existing gate in place (the server ups
 
 ### Account (CLI token)
 
-The CLI token at `~/.chest/developer-token.json` (legacy: `credentials.json`) authenticates the owner-scoped read/manage commands above (`gate list`/`inspect`/`logs`/`archive`/`unlist`, `app list`/`inspect`/`archive`/`unlist`). It's also consumed by `@chest-gate/install` and downstream tooling. Wallet-signing commands (`deploy`, `app publish`, `split update`) still use `~/.chest/wallet.json` directly.
+The CLI token at `~/.chest/agent-token.json` authenticates the owner-scoped read/manage commands above (`gate list`/`inspect`/`logs`/`archive`/`unlist`, `app list`/`inspect`/`archive`/`unlist`). It's also consumed by `@chest-gate/sdk`, `@chest-gate/install`, and downstream tooling — the same `ca_live_…` token pays x402 gates. Wallet-signing commands (`deploy`, `app publish`, `split update`) still use `~/.chest/wallet.json` directly.
 
 | Command | What it does |
 | --- | --- |
@@ -102,7 +102,7 @@ split:
 | `CHEST_GATE_URL` | Default gate URL for `login`/`whoami` |
 | `CHEST_WEB_URL` | Default web URL for `login` (default `https://chest.sh`) |
 | `CHEST_DASHBOARD` | Dashboard origin printed in `app publish` (default `https://chest.sh`) |
-| `CHEST_TOKEN` | CLI token (overrides `~/.chest/developer-token.json`) |
+| `CHEST_TOKEN` | CLI token (overrides `~/.chest/agent-token.json`) |
 | `CHEST_WALLET_KEY` | Inline 64-byte JSON array of the deployer secret key (CI) |
 | `CHEST_WALLET_KEY_PATH` | Path to a Solana keypair JSON file |
 | `CHEST_USDC_MINT` | Override the USDC mint used by the splitter init |

@@ -142,8 +142,8 @@ Recommended setup:
 ## Generate keys
 
 ```bash
-solana-keygen new --outfile agent.json
-export AGENT_WALLET_PRIVATE_KEY="$(cat agent.json)"
+solana-keygen new --outfile agent-keypair.json
+export AGENT_WALLET_PRIVATE_KEY="$(cat agent-keypair.json)"
 ```
 
 ## Related
