@@ -115,7 +115,7 @@ split:
 | `CHEST_GATE_URL` | Default gate URL for `login`/`whoami` |
 | `CHEST_WEB_URL` | Default web URL for `login` (default `https://chest.sh`) |
 | `CHEST_DASHBOARD` | Dashboard origin printed in `app publish` (default `https://chest.sh`) |
-| `CHEST_TOKEN` | CLI token (overrides `~/.chest/agent-token.json`) |
+| `CHEST_API_KEY` | `ca_live_…` agent token. Overrides `~/.chest/agent-token.json`. Same env var the dashboard / SDK / install use. |
 | `CHEST_WALLET_KEY` | Inline 64-byte JSON array of the deployer secret key (CI) |
 | `CHEST_WALLET_KEY_PATH` | Path to a Solana keypair JSON file |
 | `CHEST_USDC_MINT` | Override the USDC mint used by the splitter init |

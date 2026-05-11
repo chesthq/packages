@@ -34,7 +34,7 @@ export const loginCommand = new Command("login")
     if (existing && existing.source === "file" && !opts.force) {
       if (!stdin.isTTY) {
         console.error(
-          chalk.red("  Already logged in. Pass --force to mint a new token, or set CHEST_TOKEN env var.\n")
+          chalk.red("  Already logged in. Pass --force to mint a new token, or set CHEST_API_KEY env var.\n")
         );
         process.exit(1);
       }
@@ -58,7 +58,7 @@ export const loginCommand = new Command("login")
 
     if (!stdin.isTTY && !process.env.CI_ALLOW_NON_TTY_LOGIN) {
       console.error(
-        chalk.red("  Non-interactive shell detected. Set CHEST_TOKEN instead of running `login`.\n")
+        chalk.red("  Non-interactive shell detected. Set CHEST_API_KEY instead of running `login`.\n")
       );
       process.exit(1);
     }
