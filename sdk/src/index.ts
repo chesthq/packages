@@ -6,7 +6,7 @@
  * - **api-key** (recommended for deployed agents): pass a Chest API key via
  *   the `apiKey` option or `CHEST_API_KEY` env var. Signing happens
  *   server-side via a Privy-managed wallet bound to the key. No browser, no
- *   keypair on disk. Mint keys at https://chest.sh/app/keys.
+ *   keypair on disk. Mint keys at https://chest.sh/dashboard/agent-wallet.
  *
  * - **privy** (interactive sessions): a token JSON at
  *   `~/.chest/agent-token.json` (`{ version, token, gateUrl?, ... }` — the
@@ -188,7 +188,7 @@ function resolveMode(opts: PaidFetchOptions): "api-key" | "privy" | "local" {
   throw new Error(
     "No agent credentials found. Either:\n" +
       "  - run `chest-gate login` (PKCE browser flow, writes ~/.chest/agent-token.json)\n" +
-      "  - pass `apiKey` (or set CHEST_API_KEY), mint at https://chest.sh/app/agent-wallet\n" +
+      "  - pass `apiKey` (or set CHEST_API_KEY), mint at https://chest.sh/dashboard/agent-wallet\n" +
       `  - place a Solana keypair JSON at ${join(homedir(), ".chest", "agent-keypair.json")}`,
   );
 }
@@ -224,7 +224,7 @@ async function signWithApiKey(
   if (!token) {
     throw new Error(
       "api-key mode requires `apiKey` option or CHEST_API_KEY env var. " +
-        "Mint a key at https://chest.sh/app/keys.",
+        "Mint a key at https://chest.sh/dashboard/agent-wallet.",
     );
   }
   const apiUrl = opts.chestApi ?? process.env.CHEST_API ?? DEFAULT_CHEST_API;

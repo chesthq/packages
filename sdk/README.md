@@ -13,7 +13,7 @@ npm install @chest-gate/sdk
 
 ## Quickstart
 
-Mint an API key at [chest.sh/app/keys](https://chest.sh/app/keys), then:
+Mint an API key at [chest.sh/dashboard/agent-wallet](https://chest.sh/dashboard/agent-wallet), then:
 
 ```ts
 import { paidFetch } from "@chest-gate/sdk";
