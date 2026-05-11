@@ -36,7 +36,7 @@ import { runPkceLogin, PkceLoginError } from "@chest-gate/auth-flow";
 const VERSION = "0.5.0";
 const DEFAULT_API = "https://gate.chest.sh";
 const DEFAULT_WEB = "https://chest.sh";
-const KEYS_URL = "https://chest.sh/app/agent-wallet";
+const KEYS_URL = "https://chest.sh/dashboard/agent-wallet";
 const TOKEN_FILE = join(homedir(), ".chest", "agent-token.json");
 
 type AppKind = "skill" | "plugin" | "mcp";
