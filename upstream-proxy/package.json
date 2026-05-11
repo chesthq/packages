@@ -1,6 +1,6 @@
 {
   "name": "@chest-gate/upstream-proxy",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Templated key-holding proxy: publishers wrap an upstream API without exposing keys to chest gate",
   "type": "module",
   "license": "MIT",

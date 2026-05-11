@@ -43,14 +43,21 @@ export const initCommand = new Command("init")
       }
     }
 
-    const rl = createInterface({ input: stdin, output: stdout });
+    // When --yes is set, no readline is opened — every `ask` short-circuits to
+    // the default. Keeps the interactive prompts free of `if (yes)` branches.
+    const rl = opts.yes ? null : createInterface({ input: stdin, output: stdout });
 
     const ask = async (question: string, defaultVal: string): Promise<string> => {
+      if (!rl) return defaultVal;
       const answer = await rl.question(chalk.gray(`  ${question}`) + chalk.gray(` (${defaultVal}) `));
       return answer.trim() || defaultVal;
     };
 
-    console.log(chalk.gray("  Answer a few questions to generate your config.\n"));
+    if (opts.yes) {
+      console.log(chalk.gray("  --yes set — using defaults for every prompt.\n"));
+    } else {
+      console.log(chalk.gray("  Answer a few questions to generate your config.\n"));
+    }
 
     // Questions
     const name = await ask("Project name?", "My API");
@@ -66,44 +73,48 @@ export const initCommand = new Command("init")
     const session = parseDuration(sessionRaw);
     const port = await ask("Proxy port?", "4020");
 
-    // Routes
-    console.log();
-    console.log(chalk.gray("  Add custom route pricing? (Enter blank path to finish)"));
-
+    // Routes — skipped under --yes (the loop's "blank path to finish" is itself
+    // interactive). The user can edit the YAML after.
     const routes: Array<{ path: string; price: string }> = [];
-    let addingRoutes = true;
+    if (!opts.yes) {
+      console.log();
+      console.log(chalk.gray("  Add custom route pricing? (Enter blank path to finish)"));
 
-    while (addingRoutes) {
-      const routePath = await ask("Route path (e.g. POST /api/generate)?", "");
-      if (!routePath) {
-        addingRoutes = false;
-        break;
+      let addingRoutes = true;
+      while (addingRoutes) {
+        const routePath = await ask("Route path (e.g. POST /api/generate)?", "");
+        if (!routePath) {
+          addingRoutes = false;
+          break;
+        }
+        const routePrice = await ask(`Price for ${routePath}?`, price);
+        routes.push({ path: routePath, price: `$${routePrice.replace(/^\$/, "")}` });
       }
-      const routePrice = await ask(`Price for ${routePath}?`, price);
-      routes.push({ path: routePath, price: `$${routePrice.replace(/^\$/, "")}` });
     }
 
-    // Splits
-    console.log();
-    console.log(
-      chalk.gray(
-        "  Revenue splits let agents/MCPs that route traffic to your API earn a commission."
-      )
-    );
-    console.log(
-      chalk.gray(
-        "  Splits are enforced on-chain (extra setup tx on first deploy). Skip if unsure."
-      )
-    );
-    const splitAnswer = await ask("Enable revenue splits? (y/N)", "n");
+    // Splits — also skipped under --yes (off by default).
     let referrerPercent: number | undefined;
-    if (splitAnswer.trim().toLowerCase().startsWith("y")) {
-      const referrerRaw = await ask("Referrer commission %?", "10");
-      const parsed = parseFloat(referrerRaw);
-      referrerPercent = Number.isFinite(parsed) && parsed >= 0 ? parsed : 10;
+    if (!opts.yes) {
+      console.log();
+      console.log(
+        chalk.gray(
+          "  Revenue splits let agents/MCPs that route traffic to your API earn a commission."
+        )
+      );
+      console.log(
+        chalk.gray(
+          "  Splits are enforced on-chain (extra setup tx on first deploy). Skip if unsure."
+        )
+      );
+      const splitAnswer = await ask("Enable revenue splits? (y/N)", "n");
+      if (splitAnswer.trim().toLowerCase().startsWith("y")) {
+        const referrerRaw = await ask("Referrer commission %?", "10");
+        const parsed = parseFloat(referrerRaw);
+        referrerPercent = Number.isFinite(parsed) && parsed >= 0 ? parsed : 10;
+      }
     }
 
-    rl.close();
+    rl?.close();
 
     // Build config
     const config: Record<string, unknown> = {

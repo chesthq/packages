@@ -108,8 +108,13 @@ function validate(opts: Partial<InitOptions>): InitOptions {
   } catch {
     usage(`--target must be a valid URL (got "${opts.target}").`);
   }
-  if (!/^[a-z][a-z0-9_-]*=.+/.test(opts.authHeader!)) {
-    usage(`--auth-header must be "name=value" (got "${opts.authHeader}").`);
+  // HTTP header names are case-insensitive per RFC 7230 §3.2, so accept any
+  // case here. The header name is lowercased before substitution into the
+  // template (HTTP normalisation, matches what --strip-headers does).
+  if (!/^[A-Za-z][A-Za-z0-9_-]*=.+/.test(opts.authHeader!)) {
+    usage(
+      `--auth-header must be "name=value" with an ASCII header name (got "${opts.authHeader}").`,
+    );
   }
   if (!/^[a-z0-9][a-z0-9-]*$/.test(opts.name!)) {
     usage(`<name> must be lowercase alphanumeric + dashes (got "${opts.name}").`);
@@ -166,7 +171,11 @@ function init(opts: InitOptions) {
     process.exit(1);
   }
 
-  const [headerName, headerValue] = opts.authHeader.split("=", 2);
+  const [rawHeaderName, headerValue] = opts.authHeader.split("=", 2);
+  // Lowercase here (HTTP norm) so the template lands on a canonical form
+  // regardless of how the user typed --auth-header (Authorization vs
+  // authorization vs X-API-Key — all equivalent on the wire).
+  const headerName = rawHeaderName.toLowerCase();
   // Detect $ENV:VARNAME refs and capture the env variable for the README.
   const envMatch = /^\$ENV:([A-Z][A-Z0-9_]*)$/.exec(headerValue);
   const envVarName = envMatch ? envMatch[1] : null;
