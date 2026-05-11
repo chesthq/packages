@@ -1,5 +1,8 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { FreebieTracker } from "./freebie.js";
 import { TransactionStore } from "./db.js";
 import { matchRoute } from "./routes.js";
@@ -9,6 +12,13 @@ import { computeSplitAmounts, callDistribute } from "./splitter.js";
 import { resolveReferrer } from "./referrer.js";
 import type { ProxyHooks, RequestEvent, SettledEvent } from "./hooks.js";
 import chalk from "chalk";
+
+// Read from package.json so /__chest/health can't drift on future bumps.
+const PKG_VERSION = (
+  JSON.parse(
+    readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../package.json"), "utf-8"),
+  ) as { version: string }
+).version;
 
 export interface RouteConfig {
   path: string;
@@ -76,7 +86,7 @@ export async function createProxy(config: ProxyConfig): Promise<ProxyServer> {
   app.get("/__chest/health", (c) => {
     return c.json({
       status: "ok",
-      version: "0.1.0",
+      version: PKG_VERSION,
       feePayer: facilitator.feePayer,
       network: config.network,
     });
