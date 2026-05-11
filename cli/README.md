@@ -26,6 +26,19 @@ chest-gate --help
 | `chest-gate install <slug> [--force\|--upgrade]` | Install a published app (skill) into `~/.claude/skills/`. Shells out to `npx @chest-gate/install`. |
 | `chest-gate upgrade [--pm npm\|pnpm\|yarn\|bun] [--check]` | Upgrade to the latest CLI from npm |
 
+### Call a gate
+
+| Command | What it does |
+| --- | --- |
+| `chest-gate call <url>` | Pay an x402 gate and print the response. Uses the wallet from `chest-gate login`, or `CHEST_API_KEY`, or `~/.chest/agent-keypair.json` (auto-detected). |
+
+```bash
+chest-gate login
+chest-gate call https://gate.chest.sh/g/sentiment/<endpoint>
+```
+
+Flags: `-X <method>`, `-H 'k: v'` (repeatable), `-d <body|@file|->`, `--app <slug>` (referrer attribution), `--referrer <wallet>` (overrides `--app`), `--mode auto|api-key|privy|local`, `--api-key <key>`, `--gate-url <url>`, `--raw` (body only), `--json` (`{ body, receipt, payer, mode }`).
+
 ### Run & deploy
 
 | Command | What it does |
