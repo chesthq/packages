@@ -15,7 +15,7 @@ const PACKAGE = "@chest-gate/install";
  */
 export const installCommand = new Command("install")
   .description("Install a published Chest Gate app (skill) into ~/.claude/skills/")
-  .argument("<slug>", "App slug, e.g. `trading-decision` or `@author/name`")
+  .argument("<slug>", "App slug, e.g. `trading-decision`")
   .option("--force", "Remove an existing target before installing (destructive)")
   .option("--upgrade", "Rename an existing target to <name>.bak-<timestamp> first")
   .allowUnknownOption(true)
