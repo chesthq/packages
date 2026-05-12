@@ -8,7 +8,8 @@ interface CallOptions {
   data?: string;
   app?: string;
   referrer?: string;
-  apiKey?: string;
+  referrerKey?: string;
+  agentToken?: string;
   mode?: string;
   gateUrl?: string;
   raw?: boolean;
@@ -16,15 +17,16 @@ interface CallOptions {
 }
 
 export const callCommand = new Command("call")
-  .description("Pay an x402 gate and print the response. Uses the wallet from `chest-gate login`, CHEST_API_KEY, or ~/.chest/agent-keypair.json (auto-detected).")
+  .description("Pay an x402 gate and print the response. Uses the wallet from `chest-gate login`, CHEST_AGENT_TOKEN, or ~/.chest/agent-keypair.json (auto-detected).")
   .argument("<url>", "Gate URL to call, e.g. https://gate.chest.sh/g/<slug>/<endpoint>")
   .option("-X, --method <verb>", "HTTP method", "GET")
   .option("-H, --header <header>", "Extra header (repeatable), e.g. -H 'accept: application/json'", collect, [] as string[])
   .option("-d, --data <body>", "Request body. Prefix with @ to read from a file, or use - for stdin.")
   .option("--app <slug>", "Forward x-chest-app=<slug> so the gate attributes the referrer cut.")
   .option("--referrer <wallet>", "Forward x-referrer-wallet (overrides --app for attribution).")
-  .option("--api-key <key>", "Chest API key (or set CHEST_API_KEY). Overrides login credentials.")
-  .option("--mode <mode>", "Credential mode: auto | api-key | privy | local", "auto")
+  .option("--referrer-key <key>", "Referrer key cg_pub_… (or set CHEST_REFERRER_KEY). Forwarded as X-Chest-Referrer-Key.")
+  .option("--agent-token <token>", "Agent token ca_live_… (or set CHEST_AGENT_TOKEN). Overrides login credentials.")
+  .option("--mode <mode>", "Credential mode: auto | agent-token | privy | local", "auto")
   .option("--gate-url <url>", "Override the chest.sh API URL used to co-sign payments.")
   .option("--raw", "Print only the response body (no receipt footer).")
   .option("--json", "Print { body, receipt, payer, mode } as JSON.")
@@ -34,8 +36,8 @@ export const callCommand = new Command("call")
     }
 
     const mode = (opts.mode ?? "auto") as PaidFetchMode;
-    if (!["auto", "api-key", "privy", "local"].includes(mode)) {
-      fail(opts, `Invalid --mode: ${mode}. Expected auto, api-key, privy, or local.`);
+    if (!["auto", "agent-token", "privy", "local"].includes(mode)) {
+      fail(opts, `Invalid --mode: ${mode}. Expected auto, agent-token, privy, or local.`);
     }
 
     const headers = new Headers();
@@ -55,7 +57,8 @@ export const callCommand = new Command("call")
       const result = await paidFetch(url, {
         init: { method, headers, body },
         mode,
-        apiKey: opts.apiKey,
+        agentToken: opts.agentToken,
+        referrerKey: opts.referrerKey,
         appSlug: opts.app,
         referrerWallet: opts.referrer,
         chestApi: opts.gateUrl,

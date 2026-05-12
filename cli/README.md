@@ -30,14 +30,14 @@ chest-gate --help
 
 | Command | What it does |
 | --- | --- |
-| `chest-gate call <url>` | Pay an x402 gate and print the response. Uses the wallet from `chest-gate login`, or `CHEST_API_KEY`, or `~/.chest/agent-keypair.json` (auto-detected). |
+| `chest-gate call <url>` | Pay an x402 gate and print the response. Uses the wallet from `chest-gate login`, or `CHEST_AGENT_TOKEN`, or `~/.chest/agent-keypair.json` (auto-detected). |
 
 ```bash
 chest-gate login
 chest-gate call https://gate.chest.sh/g/sentiment/<endpoint>
 ```
 
-Flags: `-X <method>`, `-H 'k: v'` (repeatable), `-d <body|@file|->`, `--app <slug>` (referrer attribution), `--referrer <wallet>` (overrides `--app`), `--mode auto|api-key|privy|local`, `--api-key <key>`, `--gate-url <url>`, `--raw` (body only), `--json` (`{ body, receipt, payer, mode }`).
+Flags: `-X <method>`, `-H 'k: v'` (repeatable), `-d <body|@file|->`, `--app <slug>` (referrer attribution via appSlug), `--referrer-key <key>` (referrer attribution via `cg_pub_…`), `--referrer <wallet>` (explicit referrer wallet; overrides `--app`), `--mode auto|agent-token|privy|local`, `--agent-token <token>`, `--gate-url <url>`, `--raw` (body only), `--json` (`{ body, receipt, payer, mode }`).
 
 ### Run & deploy
 
@@ -71,7 +71,7 @@ Re-running `chest-gate deploy` updates an existing gate in place (the server ups
 | Command | What it does |
 | --- | --- |
 | `chest-gate app validate [path]` | Validate an `app.md` manifest |
-| `chest-gate app slug [path]` | Print the canonical `@author/name` slug (pipeable) |
+| `chest-gate app slug [path]` | Print the canonical app slug (pipeable) |
 | `chest-gate app publish [--dry-run]` | Publish to chest.sh, signed with `~/.chest/wallet.json` |
 | `chest-gate app list [--limit n] [--offset n] [--json]` | List apps published by the wallet you're logged in as |
 | `chest-gate app inspect <slug> [--json]` | Show the full owner view of a published app |
@@ -115,7 +115,8 @@ split:
 | `CHEST_GATE_URL` | Default gate URL for `login`/`whoami` |
 | `CHEST_WEB_URL` | Default web URL for `login` (default `https://chest.sh`) |
 | `CHEST_DASHBOARD` | Dashboard origin printed in `app publish` (default `https://chest.sh`) |
-| `CHEST_API_KEY` | `ca_live_…` agent token. Overrides `~/.chest/agent-token.json`. Same env var the dashboard / SDK / install use. |
+| `CHEST_AGENT_TOKEN` | `ca_live_…` agent token. Overrides `~/.chest/agent-token.json`. Same env var the dashboard / SDK / install use. |
+| `CHEST_REFERRER_KEY` | `cg_pub_…` referrer key. Forwarded as `X-Chest-Referrer-Key` on paid calls; safe to ship in code. |
 | `CHEST_WALLET_KEY` | Inline 64-byte JSON array of the deployer secret key (CI) |
 | `CHEST_WALLET_KEY_PATH` | Path to a Solana keypair JSON file |
 | `CHEST_USDC_MINT` | Override the USDC mint used by the splitter init |

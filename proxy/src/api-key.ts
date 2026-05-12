@@ -1,15 +1,19 @@
 /**
- * Referrer API keys for Chest Gate.
+ * Referrer keys for Chest Gate.
  *
- * Agents that can't sign per-request with a wallet (MCP servers, Claude
- * skills, bots without keypair access) can instead use a bearer token:
+ * Attribution-only credential — identifies "who gets the cut", not "who
+ * pays". The payer is authorized by the x402 signature on `X-Payment`;
+ * the referrer key is metadata.
  *
- *   Authorization: Bearer cg_pub_live_<28 chars>
+ *   X-Chest-Referrer-Key: cg_pub_live_<28 chars>
+ *
+ * Sent on a dedicated header (not `Authorization`) so it doesn't compete
+ * with the agent token's Bearer slot. That lets a caller pay via an
+ * agent token AND credit a referrer in the same request when needed.
  *
  * The `pub` segment (Stripe-style "publishable") signals that this key is
- * safe to ship in distributed code — agents/MCP servers/skill source. It's
- * not a spending credential; leaking it only credits the bound wallet for
- * more referrer commissions.
+ * safe to ship in distributed code — MCP servers, skill source, example
+ * repos. Leaking it only credits the bound wallet for more commissions.
  *
  * The server hashes the token with HMAC-SHA256 (key = API_KEY_HASH_PEPPER)
  * and looks up the row. The row carries the `payoutWallet`, committed at
@@ -66,19 +70,28 @@ export function hashApiKey(plaintext: string, pepper: string): string {
   return createHmac("sha256", pepper).update(plaintext).digest("hex");
 }
 
+/** Header that carries the referrer key on gate calls. */
+export const REFERRER_KEY_HEADER = "x-chest-referrer-key";
+
 /**
- * Parse `Authorization: Bearer cg_pub_...` and return the token only if
- * it matches the expected shape. Returns null for anything else (including
- * admin keys and agent tokens, which live under different prefixes).
+ * Parse `X-Chest-Referrer-Key: cg_pub_...` and return the token only if
+ * it matches the expected shape. Returns null for anything else.
+ *
+ * Note: this is *not* on the `Authorization` header. Bearer is reserved
+ * for the spending credential (the agent token); the referrer key is
+ * attribution metadata and gets its own slot so both can coexist on the
+ * same request.
  */
-export function extractApiKeyFromHeader(
+export function extractReferrerKeyFromHeader(
   getHeader: (name: string) => string | null | undefined
 ): string | null {
-  const auth = getHeader("authorization");
-  if (!auth) return null;
-  const trimmed = auth.trim();
-  const match = /^Bearer\s+(cg_pub_(?:live|test)_[1-9A-HJ-NP-Za-km-z]{20,})$/.exec(trimmed);
-  return match?.[1] ?? null;
+  const raw = getHeader(REFERRER_KEY_HEADER);
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (/^cg_pub_(?:live|test)_[1-9A-HJ-NP-Za-km-z]{20,}$/.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
 }
 
 /**

@@ -30,7 +30,7 @@ npx -y @chest-gate/install trading-decision
    - **[2] Paste** — paste a `ca_live_…` token from [chest.sh/dashboard/agent-wallet](https://chest.sh/dashboard/agent-wallet). Useful for headless installs where the browser flow can't open a window.
    - **[3] Skip** — set up later by running `chest-gate login` or saving a key manually.
 
-   Skipped entirely if `CHEST_API_KEY` is set, the file already exists, or the shell isn't a TTY.
+   Skipped entirely if `CHEST_AGENT_TOKEN` is set, the file already exists, or the shell isn't a TTY.
 6. **Done.** Prints the App's `next steps` block.
 
 ## Environment
@@ -40,7 +40,7 @@ npx -y @chest-gate/install trading-decision
 | `CHEST_API` | `https://gate.chest.sh` | Override the registry endpoint. |
 | `CHEST_WEB` | `https://chest.sh` | Override the web URL used by the browser sign-in flow. |
 | `CHEST_HOME` | `~/.claude/skills` | Override the install root. Useful for testing or for non–Claude Code agents. |
-| `CHEST_API_KEY` | — | If set to a `ca_live_…` token, the post-install auth prompt is skipped. |
+| `CHEST_AGENT_TOKEN` | — | If set to a `ca_live_…` token, the post-install auth prompt is skipped. |
 
 ## Requirements
 
