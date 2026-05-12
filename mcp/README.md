@@ -24,7 +24,7 @@ Add to `~/.config/claude/claude_desktop_config.json` (or the equivalent on Windo
       "command": "npx",
       "args": ["-y", "@chest-gate/mcp"],
       "env": {
-        "CHEST_API_KEY": "cg_live_...",
+        "CHEST_API_KEY": "cg_pub_live_...",
         "AGENT_WALLET_PRIVATE_KEY": "[1,2,3,...]"
       }
     }
@@ -32,7 +32,7 @@ Add to `~/.config/claude/claude_desktop_config.json` (or the equivalent on Windo
 }
 ```
 
-Mint a `CHEST_API_KEY` at [chest.sh/dashboard/keys](https://chest.sh/dashboard/keys) — your payout wallet is bound at key creation. Rotate by revoking and minting a new one.
+Mint a `CHEST_API_KEY` at [chest.sh/dashboard/referrer/keys](https://chest.sh/dashboard/referrer/keys) — your payout wallet is bound at key creation. Rotate by revoking and minting a new one.
 
 Restart Claude. The four tools below appear automatically.
 
@@ -42,7 +42,7 @@ Set `CHEST_SLUG` to lock the MCP to one gate — matches the per-gate install sn
 
 ```json
 "env": {
-  "CHEST_API_KEY": "cg_live_...",
+  "CHEST_API_KEY": "cg_pub_live_...",
   "CHEST_SLUG":    "sentiment-api"
 }
 ```
@@ -67,13 +67,13 @@ When set:
 Three modes, picked by which env var is set first:
 
 1. **`CHEST_AGENT_TOKEN`** (`ca_live_...`) — hosted-wallet, no keypair on your machine. Server pays from a Privy wallet bound to the token.
-2. **`CHEST_API_KEY`** (`cg_live_...`) — bring-your-own keypair, server credits attribution. Lighter than self-custodial signing but you still hold the spending key.
+2. **`CHEST_API_KEY`** (`cg_pub_live_...`) — bring-your-own keypair, server credits attribution. Lighter than self-custodial signing but you still hold the spending key.
 3. **`REFERRER_WALLET` + keypair** — fully self-custodial; ed25519-signed per call.
 
 | Var | Required | Purpose |
 |---|---|---|
 | `CHEST_AGENT_TOKEN` | for the hosted-wallet flow | `ca_live_...` token minted on the dashboard. When set, the MCP routes paid calls through `POST /api/agent/fetch`; `CHEST_API_KEY`, `REFERRER_WALLET`, and `AGENT_WALLET_PRIVATE_KEY` are ignored. |
-| `CHEST_API_KEY` | for the Bearer-key flow | Bearer key (`cg_live_...` / `cg_test_...`) minted at [chest.sh/dashboard/keys](https://chest.sh/dashboard/keys). Carries referrer attribution; payout wallet was committed at key creation. When set, `REFERRER_WALLET` and `REFERRER_PAYOUT_WALLET` are ignored. |
+| `CHEST_API_KEY` | for the Bearer-key flow | Bearer key (`cg_pub_live_...` / `cg_pub_test_...`) minted at [chest.sh/dashboard/referrer/keys](https://chest.sh/dashboard/referrer/keys). Carries referrer attribution; payout wallet was committed at key creation. When set, `REFERRER_WALLET` and `REFERRER_PAYOUT_WALLET` are ignored. |
 | `AGENT_WALLET_PRIVATE_KEY` | required when not using `CHEST_AGENT_TOKEN` | Solana secret key paying x402 challenges. JSON array `[1,2,3,...]` or base64. |
 | `CHEST_SLUG` | optional | Lock the MCP to a single gate. See [Single-gate mode](#single-gate-mode-chest_slug). |
 | `CHEST_GATE_BASE_URL` | optional | Override the gate base. Defaults to `https://gate.chest.sh`. Each API resolves to `{base}/g/{slug}`. |

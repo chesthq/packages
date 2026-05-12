@@ -6,7 +6,7 @@
  * order — first-set wins:
  *   1. CHEST_AGENT_TOKEN (ca_live_…) — hosted-wallet via /api/agent/fetch.
  *      Server holds the Privy wallet, MCP never touches a keypair.
- *   2. CHEST_API_KEY (Bearer cg_live_…) — referrer attribution; client
+ *   2. CHEST_API_KEY (Bearer cg_pub_live_…) — referrer attribution; client
  *      pays via AGENT_WALLET_PRIVATE_KEY.
  *   3. REFERRER_WALLET + ed25519 signing — self-custodial; client pays via
  *      AGENT_WALLET_PRIVATE_KEY and signs each referral claim.
@@ -19,7 +19,7 @@
  *   - get_app            → full app detail incl. install snippets
  *
  * Usage (stdio):
- *   CHEST_API_KEY=cg_live_… AGENT_WALLET_PRIVATE_KEY='[1,2,3,…]' npx @chest-gate/mcp
+ *   CHEST_API_KEY=cg_pub_live_… AGENT_WALLET_PRIVATE_KEY='[1,2,3,…]' npx @chest-gate/mcp
  *
  * Claude Desktop config (~/.config/claude/claude_desktop_config.json):
  *   {
@@ -28,7 +28,7 @@
  *         "command": "npx",
  *         "args": ["-y", "@chest-gate/mcp"],
  *         "env": {
- *           "CHEST_API_KEY": "cg_live_...",
+ *           "CHEST_API_KEY": "cg_pub_live_...",
  *           "AGENT_WALLET_PRIVATE_KEY": "[1,2,3,...]"
  *         }
  *       }
@@ -60,7 +60,7 @@ import { signReferral } from "./referrer.js";
 const CHEST_AGENT_TOKEN = process.env.CHEST_AGENT_TOKEN || "";
 
 /**
- * Bearer-format referrer key (cg_live_… / cg_test_…) minted at chest.sh/dashboard/keys.
+ * Bearer-format referrer key (cg_pub_live_… / cg_pub_test_…) minted at chest.sh/dashboard/referrer/keys.
  * When set, the server resolves payout from the API key and we skip ed25519 signing
  * entirely, REFERRER_WALLET / REFERRER_PAYOUT_WALLET / @noble/curves are unused.
  * x402 payment still requires AGENT_WALLET_PRIVATE_KEY.

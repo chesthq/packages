@@ -30,7 +30,7 @@ await server.listen();
 - `computeSplitAmounts`, `callDistribute` — on-chain revenue splitter
 - `signDeployMessage`, `verifyDeploySignature` — gate-deploy signature scheme
 - `signAppMessage`, `verifyAppSignature` — app-manifest signature scheme
-- `generateApiKey`, `hashApiKey`, `extractApiKeyFromHeader` — `cg_live_*` Bearer keys
+- `generateApiKey`, `hashApiKey`, `extractApiKeyFromHeader` — `cg_pub_live_*` Bearer keys
 - `resolveReferrer` — parse and verify referrer attribution
 - Session JWT helpers, route matcher, type exports
 
