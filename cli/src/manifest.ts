@@ -43,7 +43,7 @@ export interface AppManifest {
   description: string;
   /** ≥1 capability tags from the enum. */
   capabilityTags: CapabilityTag[];
-  /** Optional @author/name slugs. Each must match the same shape as App slugs. */
+  /** Optional gate slugs this app pays (bare form, e.g. `market-read`). Legacy `@author/name` accepted for back-compat. */
   upstreamGates?: string[];
   /** Optional https URL. */
   homepage?: string;
@@ -66,12 +66,14 @@ export interface AppManifest {
 }
 
 /**
- * Canonical `@author/name` slug used by the SDK's `appSlug` option and the
- * `x-chest-app` header. Every authored App has exactly one — derived
- * deterministically from the manifest, never hand-typed.
+ * Canonical bare slug used by the SDK's `appSlug` option and the
+ * `x-chest-app` header. Slugs are globally unique on chest.sh; the
+ * `author` field stays on the manifest for on-chain identity and
+ * registry display, but isn't part of the slug. The legacy
+ * `@author/name` form still resolves server-side via normalisation.
  */
-export function toAppSlug(m: Pick<AppManifest, "name" | "author">): string {
-  return `${m.author}/${m.name}`;
+export function toAppSlug(m: Pick<AppManifest, "name">): string {
+  return m.name;
 }
 
 export interface ManifestValidationError {
@@ -82,7 +84,10 @@ export interface ManifestValidationError {
 
 const NAME_PATTERN = /^[a-z0-9-]+$/;
 const AUTHOR_PATTERN = /^@[a-z0-9-]+$/;
-const SLUG_PATTERN = /^@[a-z0-9-]+\/[a-z0-9-]+$/;
+// Accepts bare `market-read` or prefixed `@alice/market-read`. Server-side
+// `normaliseAppSlugForScope()` strips the prefix, so both forms resolve to
+// the same scope. Bare is the canonical form.
+const SLUG_PATTERN = /^(?:@[a-z0-9-]+\/)?[a-z0-9-]+$/;
 const ENDPOINT_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/;
 const HTTPS_PATTERN = /^https:\/\/[^\s]+$/;
@@ -186,13 +191,13 @@ export function parseManifest(
   const gates = data.upstreamGates;
   if (gates !== undefined && gates !== null) {
     if (!Array.isArray(gates)) {
-      errors.push({ path: "upstreamGates", message: "must be an array of @author/name slugs" });
+      errors.push({ path: "upstreamGates", message: "must be an array of gate slugs (bare, e.g. `market-read`)" });
     } else {
       gates.forEach((g, i) => {
         if (typeof g !== "string" || !SLUG_PATTERN.test(g)) {
           errors.push({
             path: `upstreamGates[${i}]`,
-            message: `'${String(g)}' must match @author/app-name`,
+            message: `'${String(g)}' must be a bare slug like 'market-read' (or legacy '@author/app-name')`,
           });
         }
       });

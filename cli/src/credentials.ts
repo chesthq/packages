@@ -23,18 +23,18 @@ export interface ResolvedCredentials extends Credentials {
 }
 
 /**
- * Load credentials, preferring CHEST_API_KEY env over the on-disk file.
+ * Load credentials, preferring CHEST_AGENT_TOKEN env over the on-disk file.
  * Returns null if neither is present.
  */
 export async function loadCredentials(): Promise<ResolvedCredentials | null> {
-  const envToken = process.env.CHEST_API_KEY?.trim();
+  const envToken = process.env.CHEST_AGENT_TOKEN?.trim();
   if (envToken) {
     return {
       version: 1,
       token: envToken,
       ownerWallet: "",
       tokenId: "",
-      label: "CHEST_API_KEY env",
+      label: "CHEST_AGENT_TOKEN env",
       gateUrl: process.env.CHEST_GATE_URL?.trim() || DEFAULT_GATE_URL,
       createdAt: "",
       source: "env",

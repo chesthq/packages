@@ -1,12 +1,14 @@
 /**
  * @chest-gate/sdk, pay x402 gates from any agent.
  *
- * Three credential modes, all behind the same `paidFetch(url, opts)` API:
+ * Three credential modes for the spender, all behind the same
+ * `paidFetch(url, opts)` API:
  *
- * - **api-key** (recommended for deployed agents): pass a Chest API key via
- *   the `apiKey` option or `CHEST_API_KEY` env var. Signing happens
- *   server-side via a Privy-managed wallet bound to the key. No browser, no
- *   keypair on disk. Mint keys at https://chest.sh/dashboard/agent-wallet.
+ * - **agent-token** (recommended for deployed agents): pass an agent
+ *   token (`ca_live_…`) via the `agentToken` option or
+ *   `CHEST_AGENT_TOKEN` env var. Signing happens server-side via a
+ *   Privy-managed wallet bound to the token. No browser, no keypair on
+ *   disk. Mint at https://chest.sh/dashboard/agent-wallet.
  *
  * - **privy** (interactive sessions): a token JSON at
  *   `~/.chest/agent-token.json` (`{ version, token, gateUrl?, ... }` — the
@@ -19,17 +21,26 @@
  *   to hold their own keys.
  *
  * Mode auto-detect (when `mode` is unset or `"auto"`):
- *   1. `apiKey` option provided                → api-key
- *   2. `CHEST_API_KEY` env set                 → api-key
+ *   1. `agentToken` option provided            → agent-token
+ *   2. `CHEST_AGENT_TOKEN` env set             → agent-token
  *   3. `~/.chest/agent-token.json` exists      → privy
  *   4. `~/.chest/agent-keypair.json` exists    → local
  *   5. throw with a helpful message
  *
- * `appSlug` (optional): declare which App is calling. Forwarded as
- * `x-chest-app` on the paid request — the gate attributes the referrer
- * cut to the app's registered author wallet. Authors register an app once
- * on chest.sh, no key needs to ship in skill source. Pass `referrerWallet`
- * to override.
+ * Attribution (orthogonal to spending) — three ways to credit a referrer:
+ *
+ * - `referrerKey` option / `CHEST_REFERRER_KEY` env (`cg_pub_…`):
+ *   forwarded as `X-Chest-Referrer-Key`. The gate resolves the bound
+ *   payout wallet from the key. Safe to ship in distributed code.
+ * - `appSlug` option / `CHEST_APP_SLUG` env / nearest `app.md`: forwarded
+ *   as `x-chest-app` (bare slug, e.g. `"market-read"`; legacy
+ *   `@author/app-name` form still accepted). The gate resolves
+ *   `appSlug → authorWallet` from the apps registry. The target gate
+ *   must be one of the app's registered endpoints.
+ * - `referrerWallet` option: forwarded as `x-referrer-wallet`. Explicit
+ *   wallet; gates may require a signature depending on merchant config.
+ *
+ * Explicit beats implicit: `referrerKey` > `referrerWallet` > `appSlug`.
  *
  * Auto-discovery: if `appSlug` is not provided, the SDK falls back to
  * `process.env.CHEST_APP_SLUG`, then to the nearest `app.md` walking up
@@ -46,9 +57,10 @@ export type { RequestEvent, SettledEvent } from "./hooks.js";
 export { resolveAppSlug } from "./app-slug.js";
 
 const DEFAULT_CHEST_API = "https://gate.chest.sh";
+const REFERRER_KEY_HEADER = "x-chest-referrer-key";
 
-/** Modes describe where the credential comes from. */
-export type PaidFetchMode = "api-key" | "privy" | "local" | "auto";
+/** Modes describe where the *spending* credential comes from. */
+export type PaidFetchMode = "agent-token" | "privy" | "local" | "auto";
 
 export interface PaidFetchOptions {
   /** Forwarded to fetch() for the *initial* (unauthenticated) request. */
@@ -56,20 +68,29 @@ export interface PaidFetchOptions {
   /** Override mode detection. Default: "auto". */
   mode?: PaidFetchMode;
   /**
-   * Chest API key (e.g. `ca_live_…`). Takes precedence over file-based
-   * credentials. Falls back to `process.env.CHEST_API_KEY` if not provided
-   * and mode is api-key.
+   * Agent token (`ca_live_…`) — spending credential. Takes precedence
+   * over file-based modes. Falls back to `process.env.CHEST_AGENT_TOKEN`
+   * if not provided and mode is agent-token.
    */
-  apiKey?: string;
+  agentToken?: string;
   /**
-   * Declares which App is calling, `@author/app-name`. Forwarded as
-   * `x-chest-app` on the paid request so the gate attributes the referrer
-   * cut to the app's registered author wallet. The target gate must be
-   * one of the app's registered endpoints. Pass `referrerWallet` to
-   * override (explicit beats implicit).
+   * Referrer key (`cg_pub_…`) — attribution credential. Forwarded as
+   * `X-Chest-Referrer-Key` on the paid request so the gate credits the
+   * bound payout wallet. Falls back to `process.env.CHEST_REFERRER_KEY`.
+   * Safe to ship in distributed code (MCP servers, skill source).
+   */
+  referrerKey?: string;
+  /**
+   * Declares which App is calling — bare slug, e.g. `"market-read"`.
+   * Forwarded as `x-chest-app` on the paid request so the gate attributes
+   * the referrer cut to the app's registered author wallet. The target
+   * gate must be one of the app's registered endpoints. Legacy
+   * `@author/app-name` form is still accepted (server normalises both to
+   * the same scope). Pass `referrerKey` or `referrerWallet` to override
+   * (explicit beats implicit).
    */
   appSlug?: string;
-  /** Override chest.sh API URL (used in api-key and privy modes). */
+  /** Override chest.sh API URL (used in agent-token and privy modes). */
   chestApi?: string;
   /** Override token file path (privy mode). */
   authFile?: string;
@@ -92,7 +113,7 @@ export interface PaidFetchResult {
   /** Address of the wallet that paid. */
   payer: string | null;
   /** Mode used to settle the call. */
-  mode: "api-key" | "privy" | "local";
+  mode: "agent-token" | "privy" | "local";
 }
 
 interface AuthFile {
@@ -115,6 +136,7 @@ export async function paidFetch(
   const mode = resolveMode(opts);
   const appSlug = resolveAppSlug(opts.appSlug);
   const effectiveOpts: PaidFetchOptions = appSlug === opts.appSlug ? opts : { ...opts, appSlug };
+  const referrerKey = opts.referrerKey ?? process.env.CHEST_REFERRER_KEY;
 
   const initHeaders = new Headers(opts.init?.headers ?? {});
   if (opts.referrerWallet) {
@@ -131,8 +153,8 @@ export async function paidFetch(
   const paymentRequired = await challengeRes.json();
 
   const sign =
-    mode === "api-key"
-      ? signWithApiKey(paymentRequired, url, effectiveOpts)
+    mode === "agent-token"
+      ? signWithAgentToken(paymentRequired, url, effectiveOpts)
       : mode === "privy"
         ? signWithChestApi(paymentRequired, url, effectiveOpts)
         : signWithLocalKeypair(paymentRequired, effectiveOpts);
@@ -142,11 +164,13 @@ export async function paidFetch(
   const paidHeaders = new Headers(opts.init?.headers ?? {});
   paidHeaders.set("x-payment", xPayment);
   if (opts.referrerWallet) paidHeaders.set("x-referrer-wallet", opts.referrerWallet);
-  // Skill-author attribution: the gate resolves `appSlug → authorWallet`
-  // from its own apps registry, so no key needs to ship in source. Skipped
-  // when the caller passed an explicit referrerWallet (explicit beats
-  // implicit, same precedence as the agent-fetch path).
-  if (appSlug && !opts.referrerWallet) {
+  // Attribution precedence: referrerKey > referrerWallet > appSlug.
+  // Skill-author attribution via appSlug: the gate resolves `appSlug →
+  // authorWallet` from its own apps registry. Skipped when the caller
+  // passed an explicit referrerKey or referrerWallet.
+  if (referrerKey) {
+    paidHeaders.set(REFERRER_KEY_HEADER, referrerKey);
+  } else if (appSlug && !opts.referrerWallet) {
     paidHeaders.set("x-chest-app", appSlug);
   }
 
@@ -176,19 +200,19 @@ export async function paidFetch(
 
 // ── Mode resolution ───────────────────────────────────────────────────────
 
-function resolveMode(opts: PaidFetchOptions): "api-key" | "privy" | "local" {
+function resolveMode(opts: PaidFetchOptions): "agent-token" | "privy" | "local" {
   const override = opts.mode ?? (process.env.CHEST_AGENT_MODE as PaidFetchMode | undefined);
-  if (override === "api-key" || override === "privy" || override === "local") return override;
+  if (override === "agent-token" || override === "privy" || override === "local") return override;
 
-  // Auto-detect: api-key wins if a token is reachable, then file-based modes.
-  if (opts.apiKey || process.env.CHEST_API_KEY) return "api-key";
+  // Auto-detect: agent-token wins if a token is reachable, then file-based modes.
+  if (opts.agentToken || process.env.CHEST_AGENT_TOKEN) return "agent-token";
   if (tokenFileExists(opts.authFile)) return "privy";
   if (keypairFileExists(opts.keypairFile)) return "local";
 
   throw new Error(
     "No agent credentials found. Either:\n" +
       "  - run `chest-gate login` (PKCE browser flow, writes ~/.chest/agent-token.json)\n" +
-      "  - pass `apiKey` (or set CHEST_API_KEY), mint at https://chest.sh/dashboard/agent-wallet\n" +
+      "  - pass `agentToken` (or set CHEST_AGENT_TOKEN), mint at https://chest.sh/dashboard/agent-wallet\n" +
       `  - place a Solana keypair JSON at ${join(homedir(), ".chest", "agent-keypair.json")}`,
   );
 }
@@ -213,18 +237,18 @@ function keypairFileExists(override?: string): boolean {
   return existsSync(override ?? KEYPAIR_FILE);
 }
 
-// ── api-key mode: token from option / env, sign via chest.sh ──────────────
+// ── agent-token mode: token from option / env, sign via chest.sh ──────────
 
-async function signWithApiKey(
+async function signWithAgentToken(
   paymentRequired: unknown,
   gateUrl: string,
   opts: PaidFetchOptions,
 ): Promise<{ xPayment: string; payer: string | null }> {
-  const token = opts.apiKey ?? process.env.CHEST_API_KEY;
+  const token = opts.agentToken ?? process.env.CHEST_AGENT_TOKEN;
   if (!token) {
     throw new Error(
-      "api-key mode requires `apiKey` option or CHEST_API_KEY env var. " +
-        "Mint a key at https://chest.sh/dashboard/agent-wallet.",
+      "agent-token mode requires `agentToken` option or CHEST_AGENT_TOKEN env var. " +
+        "Mint at https://chest.sh/dashboard/agent-wallet.",
     );
   }
   const apiUrl = opts.chestApi ?? process.env.CHEST_API ?? DEFAULT_CHEST_API;

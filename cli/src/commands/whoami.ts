@@ -25,7 +25,7 @@ export const whoamiCommand = new Command("whoami")
           source: creds.source,
           ownerWallet: creds.source === "env" ? session?.ownerWallet ?? null : creds.ownerWallet,
           tokenId: creds.source === "env" ? session?.tokenId ?? null : creds.tokenId,
-          label: creds.source === "env" ? session?.label ?? "CHEST_API_KEY env" : creds.label,
+          label: creds.source === "env" ? session?.label ?? "CHEST_AGENT_TOKEN env" : creds.label,
           gateUrl: creds.gateUrl,
           createdAt: creds.source === "env" ? null : creds.createdAt,
           lastUsedAt: session?.lastUsedAt ?? null,
@@ -36,7 +36,7 @@ export const whoamiCommand = new Command("whoami")
 
     if (creds.source === "env") {
       console.log();
-      console.log(chalk.gray("  Source: ") + chalk.white("CHEST_API_KEY env var"));
+      console.log(chalk.gray("  Source: ") + chalk.white("CHEST_AGENT_TOKEN env var"));
       console.log(chalk.gray("  Gate:   ") + chalk.white(creds.gateUrl));
       console.log();
       if (session) {

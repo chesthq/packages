@@ -67,7 +67,7 @@ appCommand
 
 appCommand
   .command("slug")
-  .description("Print the canonical @author/name app slug from app.md (pipeable)")
+  .description("Print the canonical app slug from app.md (pipeable)")
   .argument("[path]", "Path to app.md", "./app.md")
   .action(async (path: string) => {
     const abs = resolve(process.cwd(), path);
@@ -159,8 +159,8 @@ appCommand
     "after",
     `
 Recommended: keep one source of truth in app.md and run \`chest-gate app publish\`
-from the repo root. The CLI parses frontmatter, derives the slug from
-\`@author/name\`, and pulls description/readme/links automatically.
+from the repo root. The CLI parses frontmatter, derives the bare slug from
+\`name\`, and pulls description/readme/links automatically.
 
 Required app.md fields for publish:
   - name, author, version, description, capabilityTags  (already required)

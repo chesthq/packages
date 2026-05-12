@@ -16,7 +16,7 @@ export const logoutCommand = new Command("logout")
 
     if (creds.source === "env") {
       console.log(
-        chalk.yellow("  CHEST_API_KEY env var is set; logout doesn't unset env vars.\n")
+        chalk.yellow("  CHEST_AGENT_TOKEN env var is set; logout doesn't unset env vars.\n")
       );
       return;
     }

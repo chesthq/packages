@@ -30,7 +30,7 @@ await server.listen();
 - `computeSplitAmounts`, `callDistribute` — on-chain revenue splitter
 - `signDeployMessage`, `verifyDeploySignature` — gate-deploy signature scheme
 - `signAppMessage`, `verifyAppSignature` — app-manifest signature scheme
-- `generateApiKey`, `hashApiKey`, `extractApiKeyFromHeader` — `cg_pub_live_*` Bearer keys
+- `generateApiKey`, `hashApiKey`, `extractReferrerKeyFromHeader`, `REFERRER_KEY_HEADER` — `cg_pub_live_*` referrer keys (sent on `X-Chest-Referrer-Key`, not `Authorization`)
 - `resolveReferrer` — parse and verify referrer attribution
 - Session JWT helpers, route matcher, type exports
 

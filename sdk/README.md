@@ -13,7 +13,7 @@ npm install @chest-gate/sdk
 
 ## Quickstart
 
-Mint an API key at [chest.sh/dashboard/agent-wallet](https://chest.sh/dashboard/agent-wallet), then:
+Mint an agent token at [chest.sh/dashboard/agent-wallet](https://chest.sh/dashboard/agent-wallet), then:
 
 ```ts
 import { paidFetch } from "@chest-gate/sdk";
@@ -21,9 +21,9 @@ import { paidFetch } from "@chest-gate/sdk";
 const { body, receipt, payer } = await paidFetch(
   "https://gate.chest.sh/g/market-read/price/BTC",
   {
-    mode: "api-key",
-    apiKey: process.env.CHEST_API_KEY,
-    appSlug: "@alice/market-read", // optional, declares the calling App
+    mode: "agent-token",
+    agentToken: process.env.CHEST_AGENT_TOKEN,
+    appSlug: "market-read", // optional, declares the calling App
   },
 );
 
@@ -31,38 +31,57 @@ console.log(body);                 // gate response
 console.log(receipt.txSignature);  // on-chain settlement
 ```
 
-`chest.sh` resolves the key, signs the x402 payload server-side from a Privy-managed wallet, and returns the gate response. Atomic 4-way USDC split (provider, referrer, protocol, remainder) settles via the `chest_splitter` Anchor program.
+`chest.sh` resolves the token, signs the x402 payload server-side from a Privy-managed wallet, and returns the gate response. Atomic 4-way USDC split (provider, referrer, protocol, remainder) settles via the `chest_splitter` Anchor program.
 
-## Credential modes
+## Credential model
 
-Same `paidFetch(url, opts)` signature for both.
+Two orthogonal axes:
+
+- **Spending** — *who pays.* One of three modes below.
+- **Attribution** — *who gets the cut.* `referrerKey`, `appSlug`, or `referrerWallet` (explicit beats implicit, in that order).
+
+### Spending modes
 
 | Mode | Where the credential lives | Best for |
 |---|---|---|
-| **`api-key`** | `apiKey` option or `CHEST_API_KEY` env | deployed agents, MCP servers, CI jobs |
+| **`agent-token`** | `agentToken` option or `CHEST_AGENT_TOKEN` env | deployed agents, MCP servers, CI jobs |
+| **`privy`** | `~/.chest/agent-token.json` (written by `chest-gate login`) | interactive dev sessions |
 | **`local`** | `~/.chest/agent-keypair.json` (Solana secret-key JSON) | self-custody, offline-signed |
 
-`api-key` mode posts the 402 challenge to `chest.sh/api/agent/sign` and signs server-side via a Privy-managed wallet. `local` mode signs locally; `chest.sh` is not in the path.
+`agent-token` and `privy` post the 402 challenge to `chest.sh/api/agent/sign` and sign server-side via a Privy-managed wallet. `local` signs locally; `chest.sh` is not in the path.
 
 If `mode` is unset (or `"auto"`), the SDK picks in this order:
 
-1. `apiKey` option provided → `api-key`
-2. `CHEST_API_KEY` env set → `api-key`
-3. `~/.chest/agent-keypair.json` exists → `local`
-4. Throws with a helpful message
+1. `agentToken` option provided → `agent-token`
+2. `CHEST_AGENT_TOKEN` env set → `agent-token`
+3. `~/.chest/agent-token.json` exists → `privy`
+4. `~/.chest/agent-keypair.json` exists → `local`
+5. Throws with a helpful message
 
 You almost never need to pass `mode` explicitly.
+
+### Attribution
+
+| Option | Header sent | Resolved to |
+|---|---|---|
+| `referrerKey: "cg_pub_…"` (or `CHEST_REFERRER_KEY` env) | `X-Chest-Referrer-Key` | Payout wallet bound at key creation. Safe to ship in distributed code. |
+| `appSlug: "market-read"` (or `CHEST_APP_SLUG` env / nearest `app.md`) | `x-chest-app` | App's `authorWallet` from the apps registry. |
+| `referrerWallet: "<pubkey>"` | `x-referrer-wallet` | The declared wallet (signature required for verified attribution). |
+
+Precedence: `referrerKey` > `referrerWallet` > `appSlug`.
 
 ## Options
 
 ```ts
 type PaidFetchOptions = {
   init?: RequestInit;          // forwarded to fetch() for the initial request
-  mode?: "api-key" | "local" | "auto";
-  apiKey?: string;             // ca_live_…, overrides file-based modes
-  appSlug?: string;            // @author/app-name; if omitted, resolved from CHEST_APP_SLUG env or local app.md
-  referrerWallet?: string;     // explicit referrer; overrides manifest resolution
+  mode?: "agent-token" | "privy" | "local" | "auto";
+  agentToken?: string;         // ca_live_…, overrides file-based modes
+  referrerKey?: string;        // cg_pub_…, attribution-only, safe to ship in code
+  appSlug?: string;            // bare slug, e.g. "market-read"; if omitted, resolved from CHEST_APP_SLUG env or local app.md
+  referrerWallet?: string;     // explicit referrer wallet
   chestApi?: string;           // override https://gate.chest.sh
+  authFile?: string;           // override ~/.chest/agent-token.json (privy mode)
   keypairFile?: string;        // override ~/.chest/agent-keypair.json (local mode)
 };
 ```
@@ -78,13 +97,13 @@ type PaidFetchResult = {
     payer?: string;
   } | null;
   payer: string | null;        // wallet that paid
-  mode: "api-key" | "privy" | "local";
+  mode: "agent-token" | "privy" | "local";
 };
 ```
 
 ## `appSlug` and the producer side
 
-Pass `appSlug: "@alice/market-read"` when you're calling a gate on behalf of a registered App (Claude skill, MCP server, agent integration). The server logs it today and resolves the **referrer wallet** from the App's manifest, so the App's author earns a referral split on every paid call routed through their integration.
+Pass `appSlug: "market-read"` when you're calling a gate on behalf of a registered App (Claude skill, MCP server, agent integration). The server resolves the **referrer wallet** from the App's manifest, so the App's author earns a referral split on every paid call routed through their integration. The legacy `@author/app-name` form still works — the server normalises both to the same scope — but the bare slug is the canonical form.
 
 You usually don't need to pass it explicitly. The SDK resolves `appSlug` in this order:
 
@@ -97,11 +116,11 @@ So in development, dropping a valid `app.md` next to your code is enough — the
 Get the canonical slug for an `app.md` with the CLI:
 
 ```bash
-chest-gate app slug              # prints @author/name
+chest-gate app slug              # prints the canonical bare slug
 export CHEST_APP_SLUG=$(chest-gate app slug)
 ```
 
-Want to route a referral split immediately? Pass `referrerWallet` explicitly — it overrides `appSlug` resolution.
+Want to route a referral split immediately? Pass `referrerKey` or `referrerWallet` explicitly — both override `appSlug` resolution.
 
 ## Hook event types
 

@@ -31,7 +31,8 @@ export type { ResolvedReferrer, ResolveReferrerOptions } from "./referrer.js";
 export {
   generateApiKey,
   hashApiKey,
-  extractApiKeyFromHeader,
+  extractReferrerKeyFromHeader,
+  REFERRER_KEY_HEADER,
   hashesEqual,
 } from "./api-key.js";
 export type { ApiKeyEnv, GeneratedApiKey } from "./api-key.js";

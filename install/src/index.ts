@@ -82,7 +82,7 @@ const HELP_TEXT = [
   "  CHEST_API      override registry (default: https://gate.chest.sh)",
   "  CHEST_WEB      override chest.sh URL (default: https://chest.sh)",
   "  CHEST_HOME     override install root (default: ~/.claude/skills)",
-  "  CHEST_API_KEY  ca_live_ token (skips interactive auth prompt)",
+  "  CHEST_AGENT_TOKEN  ca_live_ token (skips interactive auth prompt)",
 ].join("\n");
 
 function printHelp(): never {
@@ -223,9 +223,9 @@ function writeTokenFile(auth: TokenFile): void {
 }
 
 async function promptForAuth(): Promise<void> {
-  const envKey = process.env.CHEST_API_KEY;
+  const envKey = process.env.CHEST_AGENT_TOKEN;
   if (envKey && envKey.startsWith("ca_live_")) {
-    console.log(`  auth:    using CHEST_API_KEY from env`);
+    console.log(`  auth:    using CHEST_AGENT_TOKEN from env`);
     return;
   }
   if (existsSync(TOKEN_FILE)) {

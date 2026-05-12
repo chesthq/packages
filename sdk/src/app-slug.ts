@@ -1,6 +1,11 @@
 /**
- * Auto-resolve the calling App's slug so authors don't hand-type
- * `@author/name` in every paidFetch call.
+ * Auto-resolve the calling App's slug so authors don't hand-type it
+ * in every paidFetch call.
+ *
+ * Slug forms accepted:
+ *   - bare: `market-read` (canonical, what the dashboard teaches)
+ *   - prefixed: `@alice/market-read` (back-compat — server normalises
+ *     to the bare form for scope lookup, so both resolve identically)
  *
  * Resolution order:
  *   1. explicit `opts.appSlug` (caller wins, always)
@@ -14,7 +19,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-const SLUG_PATTERN = /^@[a-z0-9-]+\/[a-z0-9-]+$/;
+// Accepts bare `market-read` or prefixed `@alice/market-read`. Server-side
+// `normaliseAppSlugForScope()` strips the prefix, so both forms resolve to
+// the same app — but bare is the canonical form going forward.
+const SLUG_PATTERN = /^(?:@[a-z0-9-]+\/)?[a-z0-9-]+$/;
 const MAX_WALK = 6;
 
 let cached: string | null | undefined;
@@ -28,7 +36,7 @@ export function resolveAppSlug(explicit: string | undefined): string | undefined
       // Surface bad env early — silent acceptance leads to attribution bugs
       // that only show up months later when the author checks earnings.
       throw new Error(
-        `CHEST_APP_SLUG="${env}" is not a valid app slug. Expected @author/name (e.g. "@alice/market-read").`,
+        `CHEST_APP_SLUG="${env}" is not a valid app slug. Expected a bare slug like "market-read" (the @author/name form is also accepted for back-compat).`,
       );
     }
     return env;
@@ -77,9 +85,12 @@ function parseSlugFromAppMd(path: string): string | null {
   const front = match[1];
   const author = pickScalar(front, "author");
   const name = pickScalar(front, "name");
+  // Author is still required by the manifest schema (used for on-chain
+  // identity + registry display), but the slug we hand back is the bare
+  // `name` — that's what the dashboard teaches and what the server
+  // normalises to for scope lookup.
   if (!author || !name) return null;
-  const slug = `${author}/${name}`;
-  return SLUG_PATTERN.test(slug) ? slug : null;
+  return SLUG_PATTERN.test(name) ? name : null;
 }
 
 function pickScalar(front: string, key: string): string | null {

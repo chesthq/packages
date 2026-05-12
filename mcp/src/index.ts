@@ -6,8 +6,8 @@
  * order — first-set wins:
  *   1. CHEST_AGENT_TOKEN (ca_live_…) — hosted-wallet via /api/agent/fetch.
  *      Server holds the Privy wallet, MCP never touches a keypair.
- *   2. CHEST_API_KEY (Bearer cg_pub_live_…) — referrer attribution; client
- *      pays via AGENT_WALLET_PRIVATE_KEY.
+ *   2. CHEST_REFERRER_KEY (X-Chest-Referrer-Key: cg_pub_live_…) — referrer
+ *      attribution; client pays via AGENT_WALLET_PRIVATE_KEY.
  *   3. REFERRER_WALLET + ed25519 signing — self-custodial; client pays via
  *      AGENT_WALLET_PRIVATE_KEY and signs each referral claim.
  *
@@ -19,7 +19,7 @@
  *   - get_app            → full app detail incl. install snippets
  *
  * Usage (stdio):
- *   CHEST_API_KEY=cg_pub_live_… AGENT_WALLET_PRIVATE_KEY='[1,2,3,…]' npx @chest-gate/mcp
+ *   CHEST_REFERRER_KEY=cg_pub_live_… AGENT_WALLET_PRIVATE_KEY='[1,2,3,…]' npx @chest-gate/mcp
  *
  * Claude Desktop config (~/.config/claude/claude_desktop_config.json):
  *   {
@@ -28,7 +28,7 @@
  *         "command": "npx",
  *         "args": ["-y", "@chest-gate/mcp"],
  *         "env": {
- *           "CHEST_API_KEY": "cg_pub_live_...",
+ *           "CHEST_REFERRER_KEY": "cg_pub_live_...",
  *           "AGENT_WALLET_PRIVATE_KEY": "[1,2,3,...]"
  *         }
  *       }
@@ -55,28 +55,31 @@ import { signReferral } from "./referrer.js";
  * call_api dispatches paid calls through POST /api/agent/fetch — the server
  * holds a Privy-managed wallet and performs the entire x402 dance, so the
  * MCP needs no Solana keypair. AGENT_WALLET_PRIVATE_KEY, REFERRER_WALLET,
- * REFERRER_PAYOUT_WALLET, and CHEST_API_KEY are all ignored when set.
+ * REFERRER_PAYOUT_WALLET, and CHEST_REFERRER_KEY are all ignored when set.
  */
 const CHEST_AGENT_TOKEN = process.env.CHEST_AGENT_TOKEN || "";
 
 /**
- * Bearer-format referrer key (cg_pub_live_… / cg_pub_test_…) minted at chest.sh/dashboard/referrer/keys.
- * When set, the server resolves payout from the API key and we skip ed25519 signing
- * entirely, REFERRER_WALLET / REFERRER_PAYOUT_WALLET / @noble/curves are unused.
- * x402 payment still requires AGENT_WALLET_PRIVATE_KEY.
+ * Publishable referrer key (cg_pub_live_… / cg_pub_test_…) minted at
+ * chest.sh/dashboard/referrer/keys. Sent on a dedicated header
+ * (`X-Chest-Referrer-Key`), not `Authorization` — Bearer is reserved for
+ * spending credentials. The server resolves payout from the key row, so
+ * ed25519 signing is skipped: REFERRER_WALLET / REFERRER_PAYOUT_WALLET /
+ * @noble/curves are unused. x402 payment still requires
+ * AGENT_WALLET_PRIVATE_KEY.
  */
-const CHEST_API_KEY = process.env.CHEST_API_KEY || "";
+const CHEST_REFERRER_KEY = process.env.CHEST_REFERRER_KEY || "";
 
 /**
  * Hot wallet that signs referral claims (proves ownership).
- * Ignored when CHEST_API_KEY is set.
+ * Ignored when CHEST_REFERRER_KEY is set.
  */
 const REFERRER_WALLET = process.env.REFERRER_WALLET || "";
 
 /**
  * Optional cold wallet to receive commission payouts.
  * The hot key (REFERRER_WALLET) signs; funds go here. Set this to separate
- * signing risk from funds. Ignored when CHEST_API_KEY is set.
+ * signing risk from funds. Ignored when CHEST_REFERRER_KEY is set.
  */
 const REFERRER_PAYOUT_WALLET = process.env.REFERRER_PAYOUT_WALLET || "";
 
@@ -403,8 +406,9 @@ async function callViaAgentFetch(
  * Make a request to an x402-gated endpoint. Three modes:
  *   1. CHEST_AGENT_TOKEN set → POST /api/agent/fetch (server holds wallet,
  *      handles 402+settle+attribution).
- *   2. CHEST_API_KEY (Bearer) set → direct gate call; client pays via
- *      AGENT_WALLET_PRIVATE_KEY, server resolves attribution from the key.
+ *   2. CHEST_REFERRER_KEY set → direct gate call with the key on the
+ *      X-Chest-Referrer-Key header; client pays via AGENT_WALLET_PRIVATE_KEY,
+ *      server resolves attribution from the key.
  *   3. Else → direct gate call; client pays AND signs ed25519 referral
  *      headers from REFERRER_WALLET (self-custodial fallback).
  *
@@ -429,11 +433,12 @@ async function callGatedApi(
   if (method !== "GET" && opts.body !== undefined) {
     baseHeaders["Content-Type"] = "application/json";
   }
-  // Bearer key carries referrer attribution on every request, including the
+  // Referrer key carries attribution on every request, including the
   // pre-402 probe (lets the server short-circuit attribution lookups for
-  // cached/freebie responses).
-  if (CHEST_API_KEY) {
-    baseHeaders["Authorization"] = `Bearer ${CHEST_API_KEY}`;
+  // cached/freebie responses). Sent on a dedicated header so it doesn't
+  // compete with the agent token's Bearer slot.
+  if (CHEST_REFERRER_KEY) {
+    baseHeaders["X-Chest-Referrer-Key"] = CHEST_REFERRER_KEY;
   }
 
   const body = opts.body !== undefined ? JSON.stringify(opts.body) : undefined;
@@ -469,12 +474,12 @@ async function callGatedApi(
   const paymentPayload = await httpClient.createPaymentPayload(paymentRequired as any);
   const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload);
 
-  // Attribution: CHEST_API_KEY wins. The Bearer header was set on baseHeaders
+  // Attribution: CHEST_REFERRER_KEY wins. The header was set on baseHeaders
   // above, the server resolves payout from the api_keys row directly, so no
   // ed25519 signature is needed and REFERRER_WALLET / REFERRER_PAYOUT_WALLET
-  // are ignored. Falls back to signed referrer headers when CHEST_API_KEY is
+  // are ignored. Falls back to signed referrer headers when CHEST_REFERRER_KEY is
   // unset and a REFERRER_WALLET is configured.
-  if (!CHEST_API_KEY && REFERRER_WALLET && agentSecretKey) {
+  if (!CHEST_REFERRER_KEY && REFERRER_WALLET && agentSecretKey) {
     const referralHeaders = await signReferral(
       agentSecretKey,
       REFERRER_WALLET,
@@ -574,7 +579,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       description:
         "Make a request to a Chest-gated API. Pays via x402 on Solana automatically. " +
         "Auth precedence: CHEST_AGENT_TOKEN (server-held wallet via /api/agent/fetch) > " +
-        "CHEST_API_KEY (Bearer; client pays from AGENT_WALLET_PRIVATE_KEY) > " +
+        "CHEST_REFERRER_KEY (X-Chest-Referrer-Key; client pays from AGENT_WALLET_PRIVATE_KEY) > " +
         "REFERRER_WALLET (ed25519-signed; client pays). " +
         "For GET endpoints, only `path` is needed. For POST endpoints, pass `body` as a JSON object. " +
         (singleGate
@@ -875,14 +880,14 @@ if (CHEST_SLUG) {
 if (CHEST_AGENT_TOKEN) {
   const prefix = CHEST_AGENT_TOKEN.slice(0, 12);
   console.error(`[chest-mcp] Auth: hosted-wallet (CHEST_AGENT_TOKEN ${prefix}…) — paid calls dispatched via /api/agent/fetch`);
-  if (CHEST_API_KEY || REFERRER_WALLET || AGENT_PRIVATE_KEY_RAW) {
-    console.error("[chest-mcp] Note: CHEST_API_KEY / REFERRER_WALLET / AGENT_WALLET_PRIVATE_KEY are ignored when CHEST_AGENT_TOKEN is set");
+  if (CHEST_REFERRER_KEY || REFERRER_WALLET || AGENT_PRIVATE_KEY_RAW) {
+    console.error("[chest-mcp] Note: CHEST_REFERRER_KEY / REFERRER_WALLET / AGENT_WALLET_PRIVATE_KEY are ignored when CHEST_AGENT_TOKEN is set");
   }
-} else if (CHEST_API_KEY) {
-  const prefix = CHEST_API_KEY.slice(0, 12);
-  console.error(`[chest-mcp] Referrer: API key ${prefix}… (earning commission per paid call)`);
+} else if (CHEST_REFERRER_KEY) {
+  const prefix = CHEST_REFERRER_KEY.slice(0, 12);
+  console.error(`[chest-mcp] Referrer: ${prefix}… (earning commission per paid call)`);
   if (REFERRER_WALLET) {
-    console.error("[chest-mcp] Note: REFERRER_WALLET is ignored when CHEST_API_KEY is set");
+    console.error("[chest-mcp] Note: REFERRER_WALLET is ignored when CHEST_REFERRER_KEY is set");
   }
   if (!AGENT_PRIVATE_KEY_RAW) {
     console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
@@ -893,7 +898,7 @@ if (CHEST_AGENT_TOKEN) {
     console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
   }
 } else {
-  console.error("[chest-mcp] Warning: no CHEST_AGENT_TOKEN, CHEST_API_KEY, or REFERRER_WALLET set, not earning commissions");
+  console.error("[chest-mcp] Warning: no CHEST_AGENT_TOKEN, CHEST_REFERRER_KEY, or REFERRER_WALLET set, not earning commissions");
   if (!AGENT_PRIVATE_KEY_RAW) {
     console.error("[chest-mcp] Warning: AGENT_WALLET_PRIVATE_KEY not set, cannot pay for API calls beyond freebies");
   }
