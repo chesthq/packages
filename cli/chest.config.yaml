@@ -11,6 +11,16 @@ port: 4004
 freebie: 1
 price: $0.01
 session: 300
+
+# Optional. Declares the upstream endpoints for discovery. Surfaced on
+# /g/:slug/.well-known/chest.json and on chest.sh/gates/:slug.
+# Display-only; pricing per-route still lives under `routes:` above.
+# endpoints:
+#   - path: GET /price/:token
+#     description: Spot price + 24h change for one token
+#   - path: GET /sentiment/:token
+#     description: Aggregated sentiment score for one token
+
 # Revenue split — only active after `chest deploy` (on-chain).
 split:
   referrer: 10

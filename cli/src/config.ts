@@ -7,6 +7,20 @@ export interface RouteConfig {
   price: number;
 }
 
+/**
+ * Discovery metadata for one upstream endpoint. Surfaced on
+ * /g/:slug/.well-known/chest.json under `apps.bazaar.endpoints` and on the
+ * public gate page. Optional; gates without this declared still work — they
+ * just appear without an endpoint list.
+ *
+ * Distinct from RouteConfig: that one controls per-route *pricing* and is
+ * signature-protected by the deploy message; this one is documentation only.
+ */
+export interface EndpointConfig {
+  path: string;
+  description?: string;
+}
+
 export interface SplitConfig {
   referrerBps: number;          // basis points (1000 = 10%)
   protocolBps: number;          // basis points (always 150 = 1.5%)
@@ -29,6 +43,7 @@ export interface ChestConfig {
   /** Session duration in seconds, paying agent gets free reuse for this long. */
   session: number;
   routes: RouteConfig[];
+  endpoints: EndpointConfig[];
   split?: SplitConfig;
 }
 
@@ -72,6 +87,7 @@ export async function loadConfig(opts: GateOptions): Promise<ChestConfig> {
       defaultPrice: parsePrice(opts.price || yaml.price || "$0.01"),
       session: parseSession(opts.session ?? yaml.session),
       routes: parseRoutes(yaml.routes),
+      endpoints: parseEndpoints(yaml.endpoints),
       split: parseSplit(yaml.split),
     };
   }
@@ -87,6 +103,7 @@ export async function loadConfig(opts: GateOptions): Promise<ChestConfig> {
     defaultPrice: parsePrice(opts.price || "$0.01"),
     session: parseSession(opts.session),
     routes: [],
+    endpoints: [],
     split: undefined,
   };
 }
@@ -116,6 +133,24 @@ function parseRoutes(routes: unknown): RouteConfig[] {
     path: String(r.path || r.route || ""),
     price: parsePrice(String(r.price || "$0.01")),
   }));
+}
+
+function parseEndpoints(endpoints: unknown): EndpointConfig[] {
+  if (!Array.isArray(endpoints)) return [];
+
+  const out: EndpointConfig[] = [];
+  for (const e of endpoints) {
+    if (!e || typeof e !== "object") continue;
+    const path = String((e as any).path || (e as any).route || "").trim();
+    if (!path) continue;
+    const description = (e as any).description;
+    const row: EndpointConfig = { path };
+    if (typeof description === "string" && description.trim().length > 0) {
+      row.description = description.trim();
+    }
+    out.push(row);
+  }
+  return out;
 }
 
 function parseSplit(split: unknown): SplitConfig | undefined {
