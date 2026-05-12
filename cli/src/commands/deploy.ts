@@ -152,6 +152,9 @@ export const deployCommand = new Command("deploy")
     console.log(chalk.gray("  Wallet:    ") + chalk.cyan(wallet));
     console.log(chalk.gray("  Network:   ") + chalk.white(network));
     console.log(chalk.gray("  Freebie:   ") + chalk.white(`${config.freebie} per IP`));
+    if (config.endpoints.length > 0) {
+      console.log(chalk.gray("  Endpoints: ") + chalk.white(`${config.endpoints.length} declared`));
+    }
     console.log(chalk.gray("  Server:    ") + chalk.gray(server));
 
     // If split config is present, initialize the on-chain split program
@@ -277,6 +280,19 @@ export const deployCommand = new Command("deploy")
           }))
         : undefined;
 
+    // Discovery metadata (chest.config.yaml `endpoints:`). Display-only,
+    // surfaced on /g/:slug/.well-known/chest.json under `apps.bazaar` and
+    // on the public gate page. Not signature-protected.
+    const endpointsMeta =
+      config.endpoints && config.endpoints.length > 0
+        ? {
+            endpoints: config.endpoints.map((e) => ({
+              path: e.path,
+              ...(e.description ? { description: e.description } : {}),
+            })),
+          }
+        : undefined;
+
     const deploySig = signDeployMessage(
       { deployer, payoutWallet: wallet, slug, upstream, priceMicros, network, routePrices },
       deployerSecret
@@ -299,6 +315,7 @@ export const deployCommand = new Command("deploy")
           network,
           sessionDuration: config.session,
           routePrices,
+          endpointsMeta,
           ...splitFields,
         }),
       });
