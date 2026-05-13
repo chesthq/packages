@@ -72,3 +72,128 @@ describe("runDeviceGrant — happy path", () => {
     expect(calls.length).toBeGreaterThanOrEqual(4);
   });
 });
+
+describe("runDeviceGrant — errors", () => {
+  const realFetch = global.fetch;
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    global.fetch = realFetch;
+  });
+
+  function tokenResponder(body: object, status = 400): typeof fetch {
+    return vi.fn(async (url: any) => {
+      const path = new URL(url).pathname;
+      if (path === "/v1/oauth/device/code") {
+        return new Response(
+          JSON.stringify({
+            device_code: "x".repeat(43),
+            user_code: "WXYZ-PQRS",
+            verification_uri: "https://chest.sh/device",
+            verification_uri_complete: "https://chest.sh/device?code=WXYZ-PQRS",
+            expires_in: 900,
+            interval: 1,
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify(body), { status });
+    }) as typeof fetch;
+  }
+
+  it("access_denied → DeviceGrantError kind=denied", async () => {
+    global.fetch = tokenResponder({ error: "access_denied" });
+    const p = runDeviceGrant({
+      gateUrl: "https://gate.chest.sh",
+      hostname: "h",
+      openBrowser: false,
+    });
+    const err = await captureRejection(p);
+    expect(err).toBeInstanceOf(DeviceGrantError);
+    expect(err.kind).toBe("denied");
+  });
+
+  it("expired_token → DeviceGrantError kind=expired", async () => {
+    global.fetch = tokenResponder({ error: "expired_token" });
+    const p = runDeviceGrant({
+      gateUrl: "https://gate.chest.sh",
+      hostname: "h",
+      openBrowser: false,
+    });
+    const err = await captureRejection(p);
+    expect(err.kind).toBe("expired");
+  });
+
+  it("slow_down increases interval; eventually completes", async () => {
+    let polls = 0;
+    global.fetch = vi.fn(async (url: any) => {
+      const path = new URL(url).pathname;
+      if (path === "/v1/oauth/device/code") {
+        return new Response(
+          JSON.stringify({
+            device_code: "x".repeat(43),
+            user_code: "WXYZ-PQRS",
+            verification_uri: "https://chest.sh/device",
+            verification_uri_complete: "https://chest.sh/device?code=WXYZ-PQRS",
+            expires_in: 900,
+            interval: 1,
+          }),
+          { status: 200 },
+        );
+      }
+      polls += 1;
+      if (polls < 2) {
+        return new Response(JSON.stringify({ error: "slow_down" }), {
+          status: 400,
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          token: "ca_live_ok",
+          ownerWallet: "w",
+          tokenId: "t",
+          label: "CLI: h",
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    const p = runDeviceGrant({
+      gateUrl: "https://gate.chest.sh",
+      hostname: "h",
+      openBrowser: false,
+    });
+    await vi.runAllTimersAsync();
+    const result = await p;
+    expect(result.token).toBe("ca_live_ok");
+  });
+
+  it("device/code 503 throws kind=request", async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: "service_unavailable" }), {
+        status: 503,
+      }),
+    ) as typeof fetch;
+    const err = await captureRejection(
+      runDeviceGrant({
+        gateUrl: "https://gate.chest.sh",
+        hostname: "h",
+        openBrowser: false,
+      }),
+    );
+    expect(err.kind).toBe("request");
+  });
+});
+
+async function captureRejection(p: Promise<unknown>): Promise<DeviceGrantError> {
+  // Attach a catch handler synchronously so the rejection is never "unhandled"
+  // when fake timers settle the promise before we await it below.
+  const guarded = p.then(
+    (v) => ({ ok: true as const, v }),
+    (e) => ({ ok: false as const, e: e as DeviceGrantError }),
+  );
+  await vi.runAllTimersAsync();
+  const outcome = await guarded;
+  if (outcome.ok) throw new Error("expected rejection");
+  return outcome.e;
+}
