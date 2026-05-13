@@ -75,14 +75,14 @@ export interface PaidFetchOptions {
   agentToken?: string;
   /**
    * Referrer key (`cg_pub_…`) — attribution credential. Forwarded as
-   * `X-Chest-Referrer-Key` on the paid request so the gate credits the
+   * `X-Chest-Referrer-Key` on gate requests so the gate credits the
    * bound payout wallet. Falls back to `process.env.CHEST_REFERRER_KEY`.
    * Safe to ship in distributed code (MCP servers, skill source).
    */
   referrerKey?: string;
   /**
    * Declares which App is calling — bare slug, e.g. `"market-read"`.
-   * Forwarded as `x-chest-app` on the paid request so the gate attributes
+   * Forwarded as `x-chest-app` on gate requests so the gate attributes
    * the referrer cut to the app's registered author wallet. The target
    * gate must be one of the app's registered endpoints. Legacy
    * `@author/app-name` form is still accepted (server normalises both to
@@ -139,9 +139,11 @@ export async function paidFetch(
   const referrerKey = opts.referrerKey ?? process.env.CHEST_REFERRER_KEY;
 
   const initHeaders = new Headers(opts.init?.headers ?? {});
-  if (opts.referrerWallet) {
-    initHeaders.set("x-referrer-wallet", opts.referrerWallet);
-  }
+  applyAttributionHeaders(initHeaders, {
+    referrerKey,
+    referrerWallet: opts.referrerWallet,
+    appSlug,
+  });
   const initOpts: RequestInit = { ...opts.init, headers: initHeaders };
 
   const challengeRes = await fetch(url, initOpts);
@@ -163,16 +165,11 @@ export async function paidFetch(
 
   const paidHeaders = new Headers(opts.init?.headers ?? {});
   paidHeaders.set("x-payment", xPayment);
-  if (opts.referrerWallet) paidHeaders.set("x-referrer-wallet", opts.referrerWallet);
-  // Attribution precedence: referrerKey > referrerWallet > appSlug.
-  // Skill-author attribution via appSlug: the gate resolves `appSlug →
-  // authorWallet` from its own apps registry. Skipped when the caller
-  // passed an explicit referrerKey or referrerWallet.
-  if (referrerKey) {
-    paidHeaders.set(REFERRER_KEY_HEADER, referrerKey);
-  } else if (appSlug && !opts.referrerWallet) {
-    paidHeaders.set("x-chest-app", appSlug);
-  }
+  applyAttributionHeaders(paidHeaders, {
+    referrerKey,
+    referrerWallet: opts.referrerWallet,
+    appSlug,
+  });
 
   const paidRes = await fetch(url, { ...opts.init, headers: paidHeaders });
   if (!paidRes.ok) {
@@ -199,6 +196,22 @@ export async function paidFetch(
 }
 
 // ── Mode resolution ───────────────────────────────────────────────────────
+
+function applyAttributionHeaders(
+  headers: Headers,
+  opts: { referrerKey?: string; referrerWallet?: string; appSlug?: string },
+): void {
+  if (opts.referrerWallet) headers.set("x-referrer-wallet", opts.referrerWallet);
+
+  // Attribution precedence: referrerKey > referrerWallet > appSlug.
+  // Skill-author attribution via appSlug is skipped when the caller passed
+  // an explicit referrerKey or referrerWallet.
+  if (opts.referrerKey) {
+    headers.set(REFERRER_KEY_HEADER, opts.referrerKey);
+  } else if (opts.appSlug && !opts.referrerWallet) {
+    headers.set("x-chest-app", opts.appSlug);
+  }
+}
 
 function resolveMode(opts: PaidFetchOptions): "agent-token" | "privy" | "local" {
   const override = opts.mode ?? (process.env.CHEST_AGENT_MODE as PaidFetchMode | undefined);
