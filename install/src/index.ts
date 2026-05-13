@@ -170,7 +170,7 @@ function showManifestAndExit(app: AppManifest, reason: string): never {
 
 // Matches @chest-gate/cli's Credentials shape so the file written here is
 // readable by `chest-gate whoami` and friends. ownerWallet/tokenId/label
-// stay empty for the paste flow (no PKCE response to populate them from);
+// stay empty for the paste flow (no device-grant response to populate them from);
 // the browser flow fills all seven.
 interface TokenFile {
   version: 1;
