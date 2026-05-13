@@ -1,309 +1,234 @@
 /**
- * @chest-gate/auth-flow — PKCE loopback login flow for Chest Gate clients.
+ * @chest-gate/auth-flow — OAuth 2.0 Device Authorization Grant (RFC 8628)
+ * login flow for Chest Gate clients.
  *
- * Wraps the device-pairing pattern shared by `chest-gate login` and
- * `npx @chest-gate/install`: bind a loopback server, open the browser to
- * `chest.sh/cli/login`, await the callback, exchange `code+verifier` at
- * `gate.chest.sh/v1/cli/exchange`, return the freshly-minted agent token.
+ * The CLI requests a short user code from gate.chest.sh, prints it for the
+ * user, optionally opens the verification URL in a browser, and polls until
+ * the user signs in at chest.sh/device. Returns the freshly-minted agent
+ * token. Works under SSH, Docker, CI, and headless boxes — no loopback.
  *
  * The token returned is an ordinary `ca_live_…` agent token bound to the
- * Privy-authenticated user's wallet — the same kind paste-flow users mint
- * at `chest.sh/dashboard/agent-wallet`. Per-device, revocable, no scope
- * differences today.
+ * Privy-authenticated user's wallet — same kind paste-flow users mint at
+ * chest.sh/dashboard/agent-wallet. Per-device, revocable, no scope
+ * differences.
  */
 
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createHash, randomBytes } from "node:crypto";
 import open from "open";
 
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
+const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
-export interface PkceLoginArgs {
-  /** chest.sh web base URL, e.g. `https://chest.sh`. */
-  webUrl: string;
-  /** gate.chest.sh API base URL, e.g. `https://gate.chest.sh`. */
+export interface DeviceGrantArgs {
+  /** gate.chest.sh API base URL. */
   gateUrl: string;
-  /** Hostname recorded in the token label (e.g. "alice-laptop"). */
+  /** Hostname recorded in the token label. */
   hostname: string;
-  /** Loopback port. Default: random free port. */
-  desiredPort?: number;
   /** Open the browser automatically. Default: true. */
   openBrowser?: boolean;
-  /** Called once when the loopback is bound — caller prints UI. */
-  onListen?: (info: { loginUrl: string; port: number }) => void;
-  /** Browser-callback timeout. Default: 5 min. */
+  /** Called once when the device code has been issued — caller prints UI. */
+  onCodeIssued?: (info: {
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete: string;
+    expiresInSec: number;
+  }) => void;
+  /** Optional override for the overall login timeout. Defaults to 15 min
+   *  (matches the server-issued `expires_in`). */
   timeoutMs?: number;
 }
 
-export interface PkceLoginResult {
-  /** Plaintext `ca_live_…` token, single-use code already exchanged. */
+export interface DeviceGrantResult {
   token: string;
-  /** Solana wallet the token is bound to. */
   ownerWallet: string;
-  /** Server-side row id (for revocation). */
   tokenId: string;
-  /** Human label assigned to the token (e.g. "CLI: alice-laptop"). */
   label: string;
 }
 
-export type PkceLoginErrorKind =
-  | "browser"
-  | "state"
-  | "missing-code"
+export type DeviceGrantErrorKind =
+  | "network"
+  | "request"
+  | "denied"
+  | "expired"
   | "timeout"
-  | "exchange"
-  | "loopback";
+  | "unknown";
 
-export class PkceLoginError extends Error {
+export class DeviceGrantError extends Error {
   constructor(
-    public readonly kind: PkceLoginErrorKind,
+    public readonly kind: DeviceGrantErrorKind,
     message: string,
   ) {
     super(message);
-    this.name = "PkceLoginError";
+    this.name = "DeviceGrantError";
   }
 }
 
 /**
- * Run the full PKCE loopback flow and return the minted token.
+ * Run the full RFC 8628 device-grant flow and return the minted token.
  *
- * @throws PkceLoginError on any failure (browser error, state mismatch,
- *   missing code, timeout, exchange failure, loopback bind failure).
+ * @throws DeviceGrantError on any failure (network, denied, expired,
+ *   timeout, unknown server error).
  */
-export async function runPkceLogin(args: PkceLoginArgs): Promise<PkceLoginResult> {
-  const verifier = base64url(randomBytes(32));
-  const challenge = base64url(createHash("sha256").update(verifier).digest());
-  const state = base64url(randomBytes(24));
+export async function runDeviceGrant(
+  args: DeviceGrantArgs,
+): Promise<DeviceGrantResult> {
+  const gateUrl = args.gateUrl.replace(/\/$/, "");
+  const overallTimeoutMs = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  const code = await runLoopbackFlow({
-    webUrl: args.webUrl.replace(/\/$/, ""),
-    state,
-    challenge,
-    hostname: args.hostname,
-    desiredPort: args.desiredPort ?? 0,
-    openBrowser: args.openBrowser ?? true,
-    onListen: args.onListen,
-    timeoutMs: args.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  const codeRes = await requestDeviceCode(gateUrl, args.hostname);
+
+  args.onCodeIssued?.({
+    userCode: codeRes.user_code,
+    verificationUri: codeRes.verification_uri,
+    verificationUriComplete: codeRes.verification_uri_complete,
+    expiresInSec: codeRes.expires_in,
   });
 
-  return exchangeCode({
-    gateUrl: args.gateUrl.replace(/\/$/, ""),
-    code,
-    verifier,
-  });
-}
-
-interface LoopbackArgs {
-  webUrl: string;
-  state: string;
-  challenge: string;
-  hostname: string;
-  desiredPort: number;
-  openBrowser: boolean;
-  onListen?: (info: { loginUrl: string; port: number }) => void;
-  timeoutMs: number;
-}
-
-function runLoopbackFlow(args: LoopbackArgs): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (err: Error | null, code?: string) => {
-      if (settled) return;
-      settled = true;
-      try {
-        // close() stops accepting new connections; closeAllConnections()
-        // forcibly tears down any keep-alive sockets the browser left open
-        // so the parent process can exit immediately instead of waiting on
-        // Node's 5s keepAliveTimeout. Available since Node 18.2.
-        server.close();
-        server.closeAllConnections?.();
-      } catch {}
-      clearTimeout(timer);
-      if (err) reject(err);
-      else if (code) resolve(code);
-    };
-
-    // Connection: close on every response tells the browser to terminate
-    // the socket after the response, which keeps the loopback short-lived
-    // and helps the caller exit cleanly without dangling keep-alives.
-    const htmlHeaders = { "content-type": "text/html; charset=utf-8", "connection": "close" };
-
-    const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-      const url = new URL(req.url || "/", "http://127.0.0.1");
-      if (url.pathname !== "/callback") {
-        res.writeHead(404, { "content-type": "text/plain", "connection": "close" });
-        res.end("not found");
-        return;
-      }
-      const recvState = url.searchParams.get("state");
-      const code = url.searchParams.get("code");
-      const errorParam = url.searchParams.get("error");
-
-      if (errorParam) {
-        res.writeHead(400, htmlHeaders);
-        res.end(htmlPage("Login failed", errorParam, false));
-        finish(new PkceLoginError("browser", `Browser returned error: ${errorParam}`));
-        return;
-      }
-      if (!recvState || recvState !== args.state) {
-        res.writeHead(400, htmlHeaders);
-        res.end(htmlPage("Invalid state", "State mismatch. Try again.", false));
-        finish(new PkceLoginError("state", "State mismatch on callback (possible CSRF)."));
-        return;
-      }
-      if (!code) {
-        res.writeHead(400, htmlHeaders);
-        res.end(htmlPage("Missing code", "No authorization code on the callback.", false));
-        finish(new PkceLoginError("missing-code", "Callback missing code parameter."));
-        return;
-      }
-      res.writeHead(200, htmlHeaders);
-      res.end(htmlPage("You're signed in", "You can close this tab and return to the terminal.", true));
-      finish(null, code);
+  if (args.openBrowser !== false) {
+    open(codeRes.verification_uri_complete).catch(() => {
+      // Non-fatal — the caller printed the URL via onCodeIssued.
     });
+  }
 
-    server.on("error", (err) => {
-      finish(new PkceLoginError("loopback", `Loopback server failed: ${err.message}`));
-    });
-
-    server.listen(args.desiredPort, "127.0.0.1", () => {
-      const addr = server.address();
-      if (!addr || typeof addr === "string") {
-        finish(new PkceLoginError("loopback", "Could not bind loopback server."));
-        return;
-      }
-      const port = addr.port;
-      const params = new URLSearchParams({
-        state: args.state,
-        challenge: args.challenge,
-        port: String(port),
-        hostname: args.hostname,
-      });
-      const loginUrl = `${args.webUrl}/cli/login?${params.toString()}`;
-      args.onListen?.({ loginUrl, port });
-      if (args.openBrowser) {
-        open(loginUrl).catch(() => {
-          // Non-fatal; the user can still copy the URL printed by onListen.
-        });
-      }
-    });
-
-    const timer = setTimeout(() => {
-      finish(
-        new PkceLoginError(
-          "timeout",
-          `Timed out waiting for browser sign-in (${Math.round(args.timeoutMs / 60000)} min).`,
-        ),
-      );
-    }, args.timeoutMs);
+  return pollForToken({
+    gateUrl,
+    deviceCode: codeRes.device_code,
+    intervalSec: codeRes.interval,
+    expiresInSec: codeRes.expires_in,
+    overallTimeoutMs,
   });
 }
 
-interface ExchangeArgs {
-  gateUrl: string;
-  code: string;
-  verifier: string;
+interface DeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  expires_in: number;
+  interval: number;
 }
 
-async function exchangeCode(args: ExchangeArgs): Promise<PkceLoginResult> {
+async function requestDeviceCode(
+  gateUrl: string,
+  hostname: string,
+): Promise<DeviceCodeResponse> {
   let res: Response;
   try {
-    res = await fetch(`${args.gateUrl}/v1/cli/exchange`, {
+    res = await fetch(`${gateUrl}/v1/oauth/device/code`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code: args.code, verifier: args.verifier }),
+      body: JSON.stringify({ client_id: "chest-cli", hostname }),
     });
   } catch (err) {
-    throw new PkceLoginError("exchange", `Network error: ${(err as Error).message}`);
+    throw new DeviceGrantError(
+      "network",
+      `Network error contacting ${gateUrl}: ${(err as Error).message}`,
+    );
   }
 
   if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
+    const detail = await safeErrorDetail(res);
+    throw new DeviceGrantError(
+      "request",
+      `Device code request failed (${res.status}): ${detail}`,
+    );
+  }
+
+  return (await res.json()) as DeviceCodeResponse;
+}
+
+interface PollArgs {
+  gateUrl: string;
+  deviceCode: string;
+  intervalSec: number;
+  expiresInSec: number;
+  overallTimeoutMs: number;
+}
+
+async function pollForToken(args: PollArgs): Promise<DeviceGrantResult> {
+  const deadline = Date.now() + Math.min(
+    args.expiresInSec * 1000,
+    args.overallTimeoutMs,
+  );
+  let intervalMs = args.intervalSec * 1000;
+
+  while (Date.now() < deadline) {
+    await sleep(intervalMs);
+
+    let res: Response;
     try {
-      const body = (await res.json()) as { error?: string; message?: string };
-      msg = body.error || body.message || msg;
-    } catch {}
-    throw new PkceLoginError("exchange", msg);
+      res = await fetch(`${args.gateUrl}/v1/oauth/token`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          grant_type: DEVICE_CODE_GRANT,
+          device_code: args.deviceCode,
+          client_id: "chest-cli",
+        }),
+      });
+    } catch (err) {
+      // Transient network error — keep polling until the deadline.
+      continue;
+    }
+
+    if (res.ok) {
+      return (await res.json()) as DeviceGrantResult;
+    }
+
+    let body: { error?: string; error_description?: string } = {};
+    try {
+      body = (await res.json()) as typeof body;
+    } catch {
+      // ignore — fall through to "unknown"
+    }
+
+    switch (body.error) {
+      case "authorization_pending":
+        continue;
+      case "slow_down":
+        intervalMs += 5_000;
+        continue;
+      case "access_denied":
+        throw new DeviceGrantError(
+          "denied",
+          "Authorization denied in the browser.",
+        );
+      case "expired_token":
+        throw new DeviceGrantError(
+          "expired",
+          "Login code expired before authorization. Run `chest-gate login` again.",
+        );
+      case "invalid_grant":
+      case "invalid_request":
+      case "unsupported_grant_type":
+        throw new DeviceGrantError(
+          "request",
+          body.error_description || body.error,
+        );
+      default:
+        throw new DeviceGrantError(
+          "unknown",
+          body.error_description ||
+            body.error ||
+            `Unexpected ${res.status} from token endpoint`,
+        );
+    }
   }
 
-  const body = (await res.json()) as {
-    token?: string;
-    ownerWallet?: string;
-    tokenId?: string;
-    label?: string;
-  };
-  if (!body.token || !body.ownerWallet || !body.tokenId) {
-    throw new PkceLoginError("exchange", "Malformed response from gate.");
-  }
-  return {
-    token: body.token,
-    ownerWallet: body.ownerWallet,
-    tokenId: body.tokenId,
-    label: body.label || "CLI",
-  };
+  throw new DeviceGrantError(
+    "timeout",
+    "Timed out waiting for browser authorization.",
+  );
 }
 
-function base64url(buf: Buffer): string {
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+async function safeErrorDetail(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: string; error_description?: string };
+    return body.error_description || body.error || `${res.status} ${res.statusText}`;
+  } catch {
+    return `${res.status} ${res.statusText}`;
+  }
 }
 
-// Mirrors chest.sh's dark-mode design tokens (globals.css `.dark` block).
-// Uses literal oklch() values so the browser computes them identically to
-// the chest.sh authorize page the user just came from.
-function htmlPage(title: string, body: string, ok: boolean): string {
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<title>${title}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg:          oklch(0.07 0.005 270);
-    --bg-elevated: oklch(0.11 0.005 270);
-    --border:      oklch(0.22 0.008 260);
-    --fg:          oklch(0.98 0.003 95);
-    --fg-muted:    oklch(0.68 0.006 260);
-    --success:     oklch(0.72 0.17 155);
-    --danger:      oklch(0.6 0.22 25);
-    --accent:      ${ok ? "var(--success)" : "var(--danger)"};
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; min-height: 100vh;
-    background: var(--bg); color: var(--fg);
-    font-family: "Geist", "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-  }
-  body { display: grid; place-items: center; padding: 24px; }
-  .card {
-    width: 100%; max-width: 460px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 24px 28px;
-  }
-  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-  .dot {
-    width: 8px; height: 8px; border-radius: 9999px;
-    background: var(--accent);
-    flex: 0 0 auto;
-  }
-  h1 {
-    margin: 0;
-    font-size: 17px; font-weight: 600;
-    letter-spacing: -0.01em;
-    color: var(--fg);
-    line-height: 1.3;
-  }
-  p {
-    margin: 0;
-    color: var(--fg-muted);
-    font-size: 14px; line-height: 1.55;
-    letter-spacing: -0.005em;
-  }
-</style></head>
-<body><div class="card"><div class="row"><span class="dot"></span><h1>${title}</h1></div><p>${body}</p></div></body></html>`;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
