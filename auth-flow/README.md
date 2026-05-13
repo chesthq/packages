@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/@chest-gate/auth-flow.svg)](https://www.npmjs.com/package/@chest-gate/auth-flow)
 [![license](https://img.shields.io/npm/l/@chest-gate/auth-flow.svg)](./LICENSE)
 
-> PKCE loopback login flow for Chest Gate clients. Used by `chest-gate login` and `npx @chest-gate/install` to mint a per-device agent token via `chest.sh` without copy-pasting keys.
+> OAuth 2.0 Device Authorization Grant (RFC 8628) login flow for Chest Gate clients. Used by `chest-gate login` and `npx @chest-gate/install` to mint a per-device agent token via `chest.sh` without copy-pasting keys.
 
 ## Install
 
@@ -14,15 +14,15 @@ npm install @chest-gate/auth-flow
 ## Usage
 
 ```ts
-import { runPkceLogin } from "@chest-gate/auth-flow";
+import { runDeviceGrant } from "@chest-gate/auth-flow";
 import { hostname } from "node:os";
 
-const { token, ownerWallet, tokenId, label } = await runPkceLogin({
-  webUrl: "https://chest.sh",
+const { token, ownerWallet, tokenId, label } = await runDeviceGrant({
   gateUrl: "https://gate.chest.sh",
   hostname: hostname(),
-  onListen: ({ loginUrl }) => {
-    console.log(`Visit if your browser doesn't open: ${loginUrl}`);
+  onCodeIssued: ({ userCode, verificationUriComplete }) => {
+    console.log(`Code: ${userCode}`);
+    console.log(`Visit: ${verificationUriComplete}`);
   },
 });
 
@@ -32,31 +32,35 @@ const { token, ownerWallet, tokenId, label } = await runPkceLogin({
 
 The flow:
 
-1. Generate PKCE verifier + challenge + state.
-2. Bind a loopback HTTP server on `127.0.0.1` (random port by default).
-3. Open the user's browser to `chest.sh/cli/login?state=…&challenge=…&port=…&hostname=…`.
-4. User confirms in their existing Privy session.
-5. `chest.sh` redirects the browser to `http://127.0.0.1:<port>/callback?code=…&state=…`.
-6. The library `POST /v1/cli/exchange { code, verifier }` and returns the minted token.
+1. `POST /v1/cli/device/code` to request a short user code and a device code.
+2. Print the user code and `chest.sh/device` URL (and optionally open the browser).
+3. User signs in via their existing Privy session and approves the device.
+4. The library polls `POST /v1/cli/device/token` with the device code until the user approves (or it expires).
+5. On approval, the server returns the minted `ca_live_…` token.
 
-The plaintext token only crosses the wire once (in the exchange response). The verifier never leaves your process. Codes are single-use and expire in 2 minutes.
+The plaintext token only crosses the wire once (in the final token response). The device code never leaves your process. User codes are single-use and expire in a few minutes.
+
+Replaces the previous PKCE loopback flow. The device grant works under SSH, Docker, CI, and any environment without a usable `127.0.0.1` — there's no local HTTP server, no port to bind, and no browser redirect target.
 
 ## API
 
 ```ts
-function runPkceLogin(args: PkceLoginArgs): Promise<PkceLoginResult>;
+function runDeviceGrant(args: DeviceGrantArgs): Promise<DeviceGrantResult>;
 
-interface PkceLoginArgs {
-  webUrl: string;        // chest.sh base
+interface DeviceGrantArgs {
   gateUrl: string;       // gate.chest.sh base
   hostname: string;      // appears in token label
-  desiredPort?: number;  // default: random
   openBrowser?: boolean; // default: true
-  onListen?: (info: { loginUrl: string; port: number }) => void;
+  onCodeIssued?: (info: {
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete: string;
+    expiresInSec: number;
+  }) => void;
   timeoutMs?: number;    // default: 5 * 60 * 1000
 }
 
-interface PkceLoginResult {
+interface DeviceGrantResult {
   token: string;         // ca_live_…
   ownerWallet: string;
   tokenId: string;
@@ -64,11 +68,11 @@ interface PkceLoginResult {
 }
 ```
 
-Throws `PkceLoginError` (with a `kind` discriminator) on any failure.
+Throws `DeviceGrantError` (with a `kind` discriminator) on any failure.
 
 ## Why this exists
 
-Chest Gate clients used to ask the user to paste a `ca_live_…` token from `chest.sh/app/keys`. The CLI graduated to a proper browser-confirm flow last release. This package extracts that flow so the install CLI and any other client gets it for free, with the same UX the user already saw once.
+Chest Gate clients used to ask the user to paste a `ca_live_…` token from `chest.sh/app/keys`. The CLI graduated to a proper browser-confirm flow, and now uses the device grant so it works the same on every machine — desktop, SSH, Docker, CI. This package extracts that flow so the install CLI and any other client gets it for free, with the same UX the user already saw once.
 
 ## Related
 

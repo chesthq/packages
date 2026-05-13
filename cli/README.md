@@ -84,9 +84,13 @@ The CLI token at `~/.chest/agent-token.json` authenticates the owner-scoped read
 
 | Command | What it does |
 | --- | --- |
-| `chest-gate login [--no-browser] [--force]` | PKCE browser login, mints a CLI token |
+| `chest-gate login [--no-browser] [--force]` | Device-grant browser login (RFC 8628), mints a CLI token. Works the same on desktop, SSH, Docker, and CI. |
 | `chest-gate logout [--keep-remote]` | Revoke the token server-side and delete local creds |
 | `chest-gate whoami [--json]` | Show the wallet and token currently signed in |
+
+#### Headless / SSH login
+
+`chest-gate login` works the same on every machine — desktop, SSH, Docker, CI. It prints a short code and opens (or asks you to open) `chest.sh/device` in any browser. No loopback, no port forwarding needed.
 
 ## Configure
 
