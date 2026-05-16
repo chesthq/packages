@@ -1,11 +1,11 @@
 {
   "name": "@chest-gate/auth-flow",
-  "version": "0.1.2",
-  "description": "PKCE loopback login flow for Chest Gate clients (CLI, install, SDK). Mints a per-device agent token via chest.sh.",
+  "version": "0.2.0",
+  "description": "OAuth 2.0 Device Authorization Grant (RFC 8628) login flow for Chest Gate clients (CLI, install, SDK). Mints a per-device agent token via chest.sh.",
   "keywords": [
     "x402",
     "solana",
-    "pkce",
+    "device-grant",
     "oauth",
     "chest-gate"
   ],
@@ -29,6 +29,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
@@ -36,7 +38,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "vitest": "^2.1.0"
   },
   "engines": {
     "node": ">=20"

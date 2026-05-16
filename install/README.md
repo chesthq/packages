@@ -26,8 +26,8 @@ npx -y @chest-gate/install trading-decision
 3. **Install.** Copies the skill subpath into `~/.claude/skills/<name>` (folder name read from `SKILL.md` frontmatter, falling back to the source folder).
 4. **Bootstrap.** Runs `npm install` if the skill ships a `package.json`.
 5. **Auth.** Offers three options:
-   - **[1] Browser** — opens `chest.sh`, you confirm in your existing Privy session, the installer mints a per-device agent token via PKCE and saves it to `~/.chest/agent-token.json`. Same UX as `chest-gate login`.
-   - **[2] Paste** — paste a `ca_live_…` token from [chest.sh/dashboard/agent-wallet](https://chest.sh/dashboard/agent-wallet). Useful for headless installs where the browser flow can't open a window.
+   - **[1] Browser** — prints a short code and opens `chest.sh/device`, you confirm in your existing Privy session, the installer mints a per-device agent token via the OAuth 2.0 device grant (RFC 8628) and saves it to `~/.chest/agent-token.json`. Same UX as `chest-gate login`. Works under SSH, Docker, and CI — no loopback or port forwarding needed.
+   - **[2] Paste** — paste a `ca_live_…` token from [chest.sh/dashboard/agent-wallet](https://chest.sh/dashboard/agent-wallet). Useful when you can't open a browser at all.
    - **[3] Skip** — set up later by running `chest-gate login` or saving a key manually.
 
    Skipped entirely if `CHEST_AGENT_TOKEN` is set, the file already exists, or the shell isn't a TTY.

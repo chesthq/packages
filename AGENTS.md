@@ -14,7 +14,7 @@ This is an **npm workspaces monorepo** of published packages for [Chest Gate](ht
 | `@chest-gate/mcp` | `mcp/` | MCP server binary (`chest-mcp`) |
 | `@chest-gate/install` | `install/` | CLI binary (`chest-install`) |
 | `@chest-gate/upstream-proxy` | `upstream-proxy/` | CLI scaffolder (`chest-upstream-proxy`) |
-| `@chest-gate/auth-flow` | `auth-flow/` | Library (PKCE login) |
+| `@chest-gate/auth-flow` | `auth-flow/` | Library (device-grant login) |
 
 ### Build order matters
 

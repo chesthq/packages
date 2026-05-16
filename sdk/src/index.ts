@@ -224,7 +224,7 @@ function resolveMode(opts: PaidFetchOptions): "agent-token" | "privy" | "local" 
 
   throw new Error(
     "No agent credentials found. Either:\n" +
-      "  - run `chest-gate login` (PKCE browser flow, writes ~/.chest/agent-token.json)\n" +
+      "  - run `chest-gate login` (device-grant browser flow, writes ~/.chest/agent-token.json)\n" +
       "  - pass `agentToken` (or set CHEST_AGENT_TOKEN), mint at https://chest.sh/dashboard/agent-wallet\n" +
       `  - place a Solana keypair JSON at ${join(homedir(), ".chest", "agent-keypair.json")}`,
   );

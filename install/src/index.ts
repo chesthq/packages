@@ -32,7 +32,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import { runPkceLogin, PkceLoginError } from "@chest-gate/auth-flow";
+import { runDeviceGrant, DeviceGrantError } from "@chest-gate/auth-flow";
 
 // Read from package.json so the banner can't drift on future bumps
 // (the previous hardcoded `const VERSION = ...` shipped wrong across 0.4.0/0.5.0/0.5.1).
@@ -170,7 +170,7 @@ function showManifestAndExit(app: AppManifest, reason: string): never {
 
 // Matches @chest-gate/cli's Credentials shape so the file written here is
 // readable by `chest-gate whoami` and friends. ownerWallet/tokenId/label
-// stay empty for the paste flow (no PKCE response to populate them from);
+// stay empty for the paste flow (no device-grant response to populate them from);
 // the browser flow fills all seven.
 interface TokenFile {
   version: 1;
@@ -263,20 +263,21 @@ async function promptForAuth(): Promise<void> {
 }
 
 async function runBrowserLogin(): Promise<void> {
-  const webUrl = process.env.CHEST_WEB ?? DEFAULT_WEB;
   const gateUrl = process.env.CHEST_API ?? DEFAULT_API;
   try {
-    const result = await runPkceLogin({
-      webUrl,
+    const result = await runDeviceGrant({
       gateUrl,
       hostname: hostname() || "unknown",
-      onListen: ({ loginUrl }) => {
+      onCodeIssued: ({ userCode, verificationUri, verificationUriComplete }) => {
         console.log();
-        console.log(`  Opening ${webUrl} in your browser to authorize this device…`);
-        console.log(`  If it doesn't open, visit:`);
-        console.log(`    ${loginUrl}`);
+        console.log(`  Your one-time code:  ${userCode}`);
+        console.log(`  Opening ${verificationUri} — or visit from any device:`);
+        console.log(`    ${verificationUriComplete}`);
+        process.stdout.write(`  Waiting for authorization… `);
       },
     });
+    console.log(`ok`);
+
     writeTokenFile({
       version: 1,
       token: result.token,
@@ -291,7 +292,12 @@ async function runBrowserLogin(): Promise<void> {
     console.log(`    Token label: ${result.label}`);
     console.log(`    Saved to:    ${TOKEN_FILE}`);
   } catch (err) {
-    const message = err instanceof PkceLoginError ? err.message : err instanceof Error ? err.message : String(err);
+    const message =
+      err instanceof DeviceGrantError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : String(err);
     console.log(`  auth:    browser sign-in failed (${message}).`);
     console.log(`           Falling back to paste — you can also run \`chest-gate login\` later.`);
     await runPasteFlow();
