@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { Command } from "commander";
+import updateNotifier from "update-notifier";
 import { gateCommand } from "./commands/gate.js";
 import { deployCommand } from "./commands/deploy.js";
 import { initCommand } from "./commands/init.js";
@@ -20,7 +21,9 @@ import { callCommand } from "./commands/call.js";
 
 const pkg = JSON.parse(
   readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../package.json"), "utf-8"),
-) as { version: string };
+) as { name: string; version: string };
+
+updateNotifier({ pkg }).notify();
 
 const program = new Command();
 
