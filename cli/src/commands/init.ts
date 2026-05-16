@@ -33,7 +33,14 @@ export const initCommand = new Command("init")
 
     const outputPath = opts.output;
 
-    if (existsSync(outputPath) && !opts.yes) {
+    if (existsSync(outputPath)) {
+      if (opts.yes) {
+        console.error(chalk.red(`  Error: ${outputPath} already exists.`));
+        console.error(chalk.gray("  Re-run without --yes to confirm overwrite, or pass --output to a new file."));
+        process.exitCode = 1;
+        return;
+      }
+
       const rl = createInterface({ input: stdin, output: stdout });
       const answer = await rl.question(chalk.yellow(`  ${outputPath} already exists. Overwrite? (y/N) `));
       rl.close();
